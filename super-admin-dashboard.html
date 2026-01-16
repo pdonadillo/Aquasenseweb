@@ -1,0 +1,902 @@
+<!-- this is super-admin-dashboard.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AquaSense - Super Admin Dashboard</title>
+    <link rel="stylesheet" href="main.css">
+    <link rel="stylesheet" href="super.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="super-admin-body">
+    <!-- Two-Column Layout Container -->
+    <div class="super-admin-layout">
+        
+        <!-- Left Sidebar (Fixed) - Navigation -->
+        <aside class="super-sidebar">
+            <!-- Sidebar Header/Branding -->
+            <div class="super-sidebar-header">
+                <div class="brand">
+                    <img
+                        src="assets/images/logo/aquasence.logo.png"
+                        alt="AquaSense Logo"
+                        class="app-logo"
+                    />
+                    <span class="brand-text">AquaSense Super Admin</span>
+                </div>
+            </div>
+            
+            <!-- User Profile Section -->
+            <div class="super-sidebar-user">
+                <div class="super-user-profile">
+                    <i class="fas fa-crown"></i>
+                    <div class="user-profile">
+                        <span>Loading...</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Navigation Menu -->
+            <nav class="super-sidebar-nav">
+                <a href="#overview" class="nav-link super-nav-link active">
+                    <i class="fas fa-home"></i>
+                    <span>Overview</span>
+                </a>
+                <a href="#user-management" class="nav-link super-nav-link">
+                    <i class="fas fa-users-cog"></i>
+                    <span>User Management</span>
+                </a>
+                <a href="#system" class="nav-link super-nav-link">
+                    <i class="fas fa-cog"></i>
+                    <span>System</span>
+                </a>
+            </nav>
+            
+            <!-- Sidebar Footer -->
+            <div class="super-sidebar-footer">
+                <button class="btn-logout super-btn-logout" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Logout</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Right Main Content Area -->
+        <main class="main-content super-content">
+        <!-- Overview Section -->
+        <section id="overview" class="overview-section super-overview active">
+            <div class="container">
+                <div class="dashboard-header super-header">
+                    <h1 class="dashboard-title super-title">Super Admin Dashboard</h1>
+                    <p class="dashboard-subtitle super-subtitle">Manage all users and system settings</p>
+                </div>
+                
+                <!-- System Stats -->
+                <div class="stats-grid super-stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3>Total Users</h3>
+                            <p class="stat-value" id="totalUsers">0</p>
+                            <span class="stat-change positive">Active</span>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-user-shield"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3>Admins</h3>
+                            <p class="stat-value" id="totalAdmins">0</p>
+                            <span class="stat-change positive">Authorized</span>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3>Pending Requests</h3>
+                            <p class="stat-value" id="pendingRequests">0</p>
+                            <span class="stat-change warning">Awaiting Review</span>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-server"></i>
+                        </div>
+                        <div class="stat-content">
+                            <h3>System Status</h3>
+                            <p class="stat-value">Online</p>
+                            <span class="stat-change positive">Stable</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="activity-section super-activity-section">
+                    <h3>Recent Admin Requests</h3>
+                    <div class="activity-list" id="recentRequests">
+                        <div class="activity-item">
+                            <i class="fas fa-info-circle"></i>
+                            <div class="activity-content">
+                                <p>No recent admin requests</p>
+                                <span class="activity-time">System ready</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- User Management Section - Split Screen -->
+        <section id="user-management" class="user-management-section super-user-management">
+            <div class="container">
+                <div class="split-screen-container">
+                    <!-- Master Panel (Left) - User List/Table -->
+                    <div class="master-panel">
+                        <div class="master-panel-header">
+                            <h1>User Management</h1>
+                            <p>Select a user to view details</p>
+                        </div>
+                        <div class="master-panel-content">
+                            <div class="user-controls super-user-controls">
+                                <div class="search-box">
+                                    <i class="fas fa-search"></i>
+                                    <input type="text" placeholder="Search users..." id="userSearch">
+                                </div>
+                                <div class="filter-buttons super-filter-buttons">
+                                    <button class="btn-filter active" data-filter="all">All Users</button>
+                                    <button class="btn-filter" data-filter="user">Regular Users</button>
+                                    <button class="btn-filter" data-filter="admin">Admins</button>
+                                    <button class="btn-filter" data-filter="superadmin">Super Admins</button>
+                                </div>
+                            </div>
+
+                            <div class="users-table-container super-users-table">
+                                <table class="users-table super-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Email</th>
+                                            <th>Role</th>
+                                            <th>Join Date</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="usersTableBody">
+                                        <tr>
+                                            <td colspan="5" class="no-data">Loading users...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Detail Panel (Right) - Selected User Details -->
+                    <div class="detail-panel">
+                        <div class="detail-panel-header">
+                            <h2>
+                                <i class="fas fa-user-circle"></i>
+                                User Details
+                            </h2>
+                        </div>
+                        <div class="detail-panel-content">
+                            <div class="detail-panel-empty">
+                                <i class="fas fa-hand-pointer"></i>
+                                <p>Select a user from the list to view details</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- System Section -->
+        <section id="system" class="system-section super-system">
+            <div class="container">
+                <h1 class="page-title super-page-title">Server Maintenance</h1>
+                
+                <!-- Subsection 1: System Status & Infrastructure -->
+                <div class="system-subsection">
+                    <h2 class="subsection-header">System Status & Infrastructure</h2>
+                    <div class="system-grid super-system-grid">
+                        <div class="system-card">
+                            <h3>Server Status</h3>
+                            <div class="status-list">
+                                <div class="status-item">
+                                    <span class="status-label">Server Status</span>
+                                    <span class="status-value online" id="serverStatus">Online</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Server Uptime</span>
+                                    <span class="status-value" id="serverUptime">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Last Restart</span>
+                                    <span class="status-value" id="lastRestart">--</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="system-card">
+                            <h3>Resource Utilization</h3>
+                            <div class="status-list">
+                                <div class="status-item">
+                                    <span class="status-label">CPU Usage</span>
+                                    <span class="status-value" id="cpuUsage">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Memory Usage</span>
+                                    <span class="status-value" id="memoryUsage">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Disk Usage</span>
+                                    <span class="status-value" id="diskUsage">--</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="system-card">
+                            <h3>Network Connectivity</h3>
+                            <div class="status-list">
+                                <div class="status-item">
+                                    <span class="status-label">Network Health</span>
+                                    <span class="status-value online" id="networkHealth">Healthy</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Signal Strength</span>
+                                    <span class="status-value" id="signalStrength">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Packet Loss Rate</span>
+                                    <span class="status-value" id="packetLoss">--</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="system-card">
+                            <h3>Database Status</h3>
+                            <div class="status-list">
+                                <div class="status-item">
+                                    <span class="status-label">Firestore</span>
+                                    <span class="status-value online">Online</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Users Collection</span>
+                                    <span class="status-value online">Active</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Admin Requests</span>
+                                    <span class="status-value online">Active</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Subsection 2: Data & Backup Management -->
+                <div class="system-subsection">
+                    <h2 class="subsection-header">Data & Backup Management</h2>
+                    <div class="system-grid super-system-grid">
+                        <div class="system-card">
+                            <h3>Backup Status</h3>
+                            <div class="status-list">
+                                <div class="status-item">
+                                    <span class="status-label">Last Backup</span>
+                                    <span class="status-value" id="lastBackup">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Backup Status</span>
+                                    <span class="status-value online" id="backupStatus">Active</span>
+                                </div>
+                            </div>
+                            <div class="action-buttons">
+                                <button class="btn-secondary" onclick="triggerBackup()">
+                                    <i class="fas fa-database"></i>
+                                    Manual Backup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Subsection 3: System Updates & Maintenance -->
+                <div class="system-subsection">
+                    <h2 class="subsection-header">System Updates & Maintenance</h2>
+                    <div class="system-grid super-system-grid">
+                        <div class="system-card">
+                            <h3>Firmware Version Tracking</h3>
+                            <div class="status-list" id="firmwareList">
+                                <div class="status-item">
+                                    <span class="status-label">Current Version</span>
+                                    <span class="status-value" id="currentFirmware">--</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Outdated Devices</span>
+                                    <span class="status-value" id="outdatedDevices">0</span>
+                                </div>
+                            </div>
+                            <div class="action-buttons" style="margin-top: 1rem;">
+                                <button class="btn-secondary btn-sm" onclick="openFirmwareUpdateModal()">
+                                    <i class="fas fa-upload"></i> Update Firmware
+                                </button>
+                            </div>
+                            
+                            <!-- Mobile App Update Section -->
+                            <div class="github-apk-section" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #e0e0e0;">
+                                <h4 style="margin-bottom: 1rem; color: #333;">
+                                    <i class="fab fa-github"></i> Mobile App Update (GitHub)
+                                </h4>
+                                
+                                <button id="goToGithubUpload" class="btn github-upload-btn" style="width: 100%; margin-bottom: 1.5rem;">
+                                    <i class="fab fa-github"></i> Upload New APK (GitHub)
+                                </button>
+                                
+                                <div class="form-group" style="margin-bottom: 1rem;">
+                                    <label for="apkUrlInput" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #666;">
+                                        APK Download URL (from GitHub Releases)
+                                        <button type="button" class="btn-help" onclick="openGitHubHelpModal()" style="margin-left: 0.5rem; padding: 0.2rem 0.5rem; font-size: 0.8rem; background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; cursor: pointer;">
+                                            <i class="fas fa-question-circle"></i> Help
+                                        </button>
+                                    </label>
+                                    <input id="apkUrlInput" type="text" placeholder="https://github.com/username/repo/releases/download/v1.0.0/app.apk" 
+                                           style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 5px; font-size: 0.9rem;" />
+                                </div>
+                                
+                                <div class="form-group" style="margin-bottom: 1rem;">
+                                    <label for="apkVersionInput" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #666;">Version (e.g., 1.4.2)</label>
+                                    <input id="apkVersionInput" type="text" placeholder="1.4.2" 
+                                           style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 5px; font-size: 0.9rem;" />
+                                </div>
+                                
+                                <div class="form-group" style="margin-bottom: 1rem;">
+                                    <label for="apkNotesInput" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #666;">Release Notes</label>
+                                    <textarea id="apkNotesInput" placeholder="Changes in this version..." rows="3"
+                                              style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 5px; font-size: 0.9rem; resize: vertical;"></textarea>
+                                </div>
+                                
+                                <button id="saveApkInfoBtn" class="btn-primary" style="width: 100%; padding: 0.75rem; margin-bottom: 1rem;">
+                                    <i class="fas fa-save"></i> Save App Update
+                                </button>
+                                
+                                <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e0e0e0;" />
+                                
+                                <div style="margin-top: 1rem;">
+                                    <strong style="color: #333;">Current Version:</strong>
+                                    <span id="apkCurrentVersion" style="margin-left: 0.5rem; color: #666;">--</span><br/>
+                                    <a id="apkDownloadLink" href="#" target="_blank" 
+                                       style="display: none; margin-top: 0.5rem; color: #007bff; text-decoration: none; font-weight: 600;">
+                                        <i class="fas fa-download"></i> Download Latest App
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="system-card">
+                            <h3>System Updates</h3>
+                            <div class="status-list">
+                                <div class="status-item">
+                                    <span class="status-label">Server Updates</span>
+                                    <span class="status-value" id="serverUpdates">None Available</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">IoT Firmware Updates</span>
+                                    <span class="status-value" id="iotUpdates">None Available</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="system-card">
+                            <h3>Scheduled Tasks</h3>
+                            <div class="status-list" id="scheduledTasks">
+                                <div class="status-item">
+                                    <span class="status-label">Data Cleanup</span>
+                                    <span class="status-value" id="dataCleanup">Scheduled</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Report Generation</span>
+                                    <span class="status-value" id="reportGen">Scheduled</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Device Sync</span>
+                                    <span class="status-value" id="deviceSync">Scheduled</span>
+                                </div>
+                            </div>
+                            <div class="action-buttons" style="margin-top: 1rem;">
+                                <button class="btn-secondary btn-sm" onclick="openAddTaskModal()">
+                                    <i class="fas fa-plus"></i> Add Task
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Subsection 4: Logs & Diagnostics -->
+                <div class="system-subsection">
+                    <h2 class="subsection-header">Logs & Diagnostics</h2>
+                    <div class="system-grid super-system-grid">
+                        <div class="system-card system-card-logs">
+                            <h3>Historical Uptime Logs</h3>
+                            <div class="log-list" id="uptimeLogs">
+                                <div class="log-item">
+                                    <span class="log-time">--</span>
+                                    <span class="log-message">No logs available</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="system-card system-card-logs">
+                            <h3>System Logs</h3>
+                            <div class="log-list" id="systemLogs">
+                                <div class="log-item">
+                                    <span class="log-time">--</span>
+                                    <span class="log-message">No logs available</span>
+                                </div>
+                            </div>
+                            <div class="action-buttons" style="margin-top: 1rem;">
+                                <button class="btn-secondary btn-sm" onclick="openAddLogModal('system')">
+                                    <i class="fas fa-plus"></i> Add Log
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="system-card system-card-logs">
+                            <h3>Error Logs</h3>
+                            <div class="log-list" id="errorLogs">
+                                <div class="log-item">
+                                    <span class="log-time">--</span>
+                                    <span class="log-message">No errors logged</span>
+                                </div>
+                            </div>
+                            <div class="action-buttons" style="margin-top: 1rem;">
+                                <button class="btn-secondary btn-sm" onclick="openAddLogModal('error')">
+                                    <i class="fas fa-plus"></i> Add Error
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Subsection 5: System Actions -->
+                <div class="system-subsection">
+                    <h2 class="subsection-header">System Actions</h2>
+                    <div class="system-grid super-system-grid">
+                        <div class="system-card">
+                            <h3>System Actions</h3>
+                            <div class="action-buttons">
+                                <button class="btn-secondary" onclick="refreshData()">
+                                    <i class="fas fa-sync"></i>
+                                    Refresh Data
+                                </button>
+                                <button class="btn-secondary" onclick="exportUsers()">
+                                    <i class="fas fa-download"></i>
+                                    Export Users
+                                </button>
+                                <button class="btn-warning" onclick="clearOldRequests()">
+                                    <i class="fas fa-trash"></i>
+                                    Clear Old Requests
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        </main>
+    </div>
+
+    <!-- Add User Modal -->
+    <div id="addUserModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('addUserModal')">&times;</span>
+            <div class="modal-header">
+                <h2>Add New User</h2>
+            </div>
+            <form class="user-form" id="addUserForm">
+                <div class="form-group">
+                    <label for="userFirstName">First Name</label>
+                    <input type="text" id="userFirstName" placeholder="Enter first name" required>
+                </div>
+                <div class="form-group">
+                    <label for="userLastName">Last Name</label>
+                    <input type="text" id="userLastName" placeholder="Enter last name" required>
+                </div>
+                <div class="form-group">
+                    <label for="userEmail">Email</label>
+                    <input type="email" id="userEmail" placeholder="Enter email address" required>
+                </div>
+                <div class="form-group">
+                    <label for="userPassword">Password</label>
+                    <input type="password" id="userPassword" placeholder="Enter password" required>
+                </div>
+                <div class="form-group">
+                    <label for="userRole">Role</label>
+                    <select id="userRole" required>
+                        <option value="">Select a role</option>
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                        <!-- Superadmin option only available to superadmins (handled by JS) -->
+                    </select>
+                </div>
+                <button type="submit" class="btn-primary">Create User</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Request Details Modal -->
+    <div id="requestDetailsModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('requestDetailsModal')">&times;</span>
+            <div class="modal-header">
+                <h2>Admin Request Details</h2>
+            </div>
+            <div class="request-details" id="requestDetails">
+                <!-- Request details will be populated here -->
+            </div>
+            <div class="modal-actions">
+                <button class="btn-success" onclick="approveRequest()">
+                    <i class="fas fa-check"></i>
+                    Approve
+                </button>
+                <button class="btn-danger" onclick="rejectRequest()">
+                    <i class="fas fa-times"></i>
+                    Reject
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Task Modal -->
+    <div id="addTaskModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('addTaskModal')">&times;</span>
+            <div class="modal-header">
+                <h2>Add Scheduled Task</h2>
+            </div>
+            <form class="user-form" id="addTaskForm" onsubmit="event.preventDefault(); addScheduledTask();">
+                <div class="form-group">
+                    <label for="taskName">Task Name</label>
+                    <input type="text" id="taskName" placeholder="e.g., Data Backup" required>
+                </div>
+                <div class="form-group">
+                    <label for="taskDescription">Description</label>
+                    <textarea id="taskDescription" placeholder="Task description" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="taskStatus">Status</label>
+                    <select id="taskStatus" required>
+                        <option value="scheduled">Scheduled</option>
+                        <option value="active">Active</option>
+                        <option value="completed">Completed</option>
+                        <option value="paused">Paused</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="taskNextRun">Next Run (Optional)</label>
+                    <input type="datetime-local" id="taskNextRun">
+                </div>
+                <button type="submit" class="btn-primary">Create Task</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Log Modal -->
+    <div id="addLogModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('addLogModal')">&times;</span>
+            <div class="modal-header">
+                <h2 id="addLogModalTitle">Add System Log</h2>
+            </div>
+            <form class="user-form" id="addLogForm" onsubmit="event.preventDefault(); addSystemLog();">
+                <input type="hidden" id="logType" value="system">
+                <div class="form-group">
+                    <label for="logMessage">Message</label>
+                    <textarea id="logMessage" placeholder="Enter log message" rows="4" required></textarea>
+                </div>
+                <div class="form-group" id="logTypeSelectGroup">
+                    <label for="logTypeSelect">Log Type</label>
+                    <select id="logTypeSelect" required>
+                        <option value="info">Info</option>
+                        <option value="warning">Warning</option>
+                        <option value="error">Error</option>
+                        <option value="success">Success</option>
+                    </select>
+                </div>
+                <div class="form-group" id="errorDetailsGroup" style="display: none;">
+                    <label for="errorDetails">Error Details</label>
+                    <textarea id="errorDetails" placeholder="Error details (optional)" rows="3"></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Add Log</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Firmware Update Modal -->
+    <div id="firmwareUpdateModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('firmwareUpdateModal')">&times;</span>
+            <div class="modal-header">
+                <h2>Update Firmware Version</h2>
+            </div>
+            <form class="user-form" id="firmwareUpdateForm" onsubmit="event.preventDefault(); addFirmwareUpdate();">
+                <div class="form-group">
+                    <label for="firmwareVersion">Firmware Version</label>
+                    <input type="text" id="firmwareVersion" placeholder="e.g., v1.2.3" required>
+                </div>
+                <div class="form-group">
+                    <label for="updateType">Update Type</label>
+                    <select id="updateType" required>
+                        <option value="firmware">Firmware</option>
+                        <option value="server">Server</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="outdatedDevicesCount">Outdated Devices Count</label>
+                    <input type="number" id="outdatedDevicesCount" placeholder="0" min="0" value="0">
+                </div>
+                <div class="form-group">
+                    <label for="updateNotes">Notes (Optional)</label>
+                    <textarea id="updateNotes" placeholder="Update notes" rows="3"></textarea>
+                </div>
+                <button type="submit" class="btn-primary">Update Firmware Info</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- GitHub Release Help Modal -->
+    <div id="githubHelpModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('githubHelpModal')">&times;</span>
+            <div class="modal-header">
+                <h2><i class="fab fa-github"></i> How to Upload APK to GitHub Releases</h2>
+            </div>
+            <div class="modal-body" style="padding: 1.5rem;">
+                <ol style="line-height: 1.8; color: #333;">
+                    <li style="margin-bottom: 1rem;">
+                        <strong>Go to your GitHub Repository</strong><br/>
+                        Navigate to your repository on GitHub (e.g., <code>github.com/username/repo</code>)
+                    </li>
+                    <li style="margin-bottom: 1rem;">
+                        <strong>Create a New Release</strong><br/>
+                        Click on "Releases" in the right sidebar, then click "Draft a new release"
+                    </li>
+                    <li style="margin-bottom: 1rem;">
+                        <strong>Fill Release Information</strong><br/>
+                        <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                            <li>Tag version: e.g., <code>v1.4.2</code></li>
+                            <li>Release title: e.g., "Version 1.4.2"</li>
+                            <li>Release notes: Describe the changes</li>
+                        </ul>
+                    </li>
+                    <li style="margin-bottom: 1rem;">
+                        <strong>Upload APK File</strong><br/>
+                        Drag and drop your <code>.apk</code> file into the "Attach binaries" section, or click to browse
+                    </li>
+                    <li style="margin-bottom: 1rem;">
+                        <strong>Publish Release</strong><br/>
+                        Click "Publish release" button
+                    </li>
+                    <li style="margin-bottom: 1rem;">
+                        <strong>Copy Download URL</strong><br/>
+                        After publishing, right-click on the APK file link and select "Copy link address"<br/>
+                        The URL will look like:<br/>
+                        <code style="background: #f4f4f4; padding: 0.25rem 0.5rem; border-radius: 3px; display: inline-block; margin-top: 0.5rem; font-size: 0.85rem;">
+                            https://github.com/username/repo/releases/download/v1.4.2/app.apk
+                        </code>
+                    </li>
+                    <li>
+                        <strong>Paste in Dashboard</strong><br/>
+                        Paste the copied URL into the "APK Download URL" field above and save
+                    </li>
+                </ol>
+                <div style="margin-top: 1.5rem; padding: 1rem; background: #e3f2fd; border-radius: 5px; border-left: 4px solid #2196F3;">
+                    <strong><i class="fas fa-info-circle"></i> Note:</strong> GitHub Releases provides free hosting for your APK files, 
+                    so you don't need to use Firebase Storage. This saves storage quota!
+                </div>
+            </div>
+            <div class="modal-actions" style="padding: 1rem; border-top: 1px solid #e0e0e0;">
+                <button class="btn-secondary" onclick="closeModal('githubHelpModal')">Got it!</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="firebase-init.js"></script>
+    <script type="module" src="main.js"></script>
+    
+    <style>
+        /* User Details Panel Styles */
+        .user-details-content {
+            padding: 1.5rem;
+        }
+        
+        .user-profile-section,
+        .ponds-section,
+        .devices-section {
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .user-profile-section:last-child,
+        .ponds-section:last-child,
+        .devices-section:last-child {
+            border-bottom: none;
+        }
+        
+        .user-profile-section h3,
+        .ponds-section h3,
+        .devices-section h3 {
+            margin-bottom: 1rem;
+            color: #333;
+            font-size: 1.1rem;
+        }
+        
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .detail-item:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-item label {
+            font-weight: 600;
+            color: #666;
+        }
+        
+        .detail-item span {
+            color: #333;
+        }
+        
+        .status-active {
+            color: #4CAF50;
+            font-weight: 600;
+        }
+        
+        .status-inactive {
+            color: #f44336;
+            font-weight: 600;
+        }
+        
+        .ponds-list,
+        .devices-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .pond-item,
+        .device-item {
+            padding: 1rem;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .pond-header,
+        .device-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        
+        .pond-location {
+            font-size: 0.85rem;
+            color: #666;
+        }
+        
+        .pond-description {
+            color: #666;
+            font-size: 0.9rem;
+            margin: 0.5rem 0;
+        }
+        
+        .pond-devices-count {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+        
+        .device-info {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+        
+        .device-status {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        
+        .device-status.online {
+            background: #e8f5e9;
+            color: #4CAF50;
+        }
+        
+        .device-status.offline {
+            background: #ffebee;
+            color: #f44336;
+        }
+        
+        .device-status.unknown {
+            background: #f5f5f5;
+            color: #666;
+        }
+        
+        .enabled {
+            color: #4CAF50;
+        }
+        
+        .disabled {
+            color: #f44336;
+        }
+        
+        .device-actions {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+        
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+        }
+        
+        .no-data-text {
+            color: #999;
+            font-style: italic;
+            text-align: center;
+            padding: 1rem;
+        }
+        
+        .user-row:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .user-row.selected {
+            background-color: #e3f2fd;
+        }
+        
+        /* GitHub Upload Button Styles */
+        .github-upload-btn {
+            background-color: #24292e;
+            color: white;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        
+        .github-upload-btn:hover {
+            background-color: #000000;
+        }
+        
+        .github-upload-btn:active {
+            transform: scale(0.98);
+        }
+    </style>
+</body>
+</html>
+

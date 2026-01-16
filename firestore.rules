@@ -1,0 +1,155 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================================
+    // USER DOCUMENTS
+    // ============================================================
+    match /users/{uid} {
+      // Read: Users can read their own document, SuperAdmins can read all
+      allow read: if isOwner(uid) || isSuperAdmin();
+      
+      // Create: Users can create their own document during signup
+      allow create: if request.auth != null && 
+                       request.auth.uid == uid &&
+                       // Ensure role is set to 'user' for new signups
+                       request.resource.data.role == 'user';
+      
+      // Update: Users can update their own document (except role), SuperAdmins can update any
+      allow update: if (isOwner(uid) && 
+                       !('role' in request.resource.data.diff(resource.data))) ||
+                      isSuperAdmin();
+      
+      // Delete: Only SuperAdmins can delete user documents
+      allow delete: if isSuperAdmin();
+      
+      // ============================================================
+      // USER SUBCOLLECTIONS (Level 1)
+      // ============================================================
+      // Match any first-level subcollection under users/{uid}
+      match /{subcollection}/{docId} {
+        // Allow access if user owns the parent document OR if admin/superadmin
+        allow read, write: if isOwner(uid) || isAdminOrSuperAdmin();
+        
+        // ============================================================
+        // NESTED SUBCOLLECTIONS (Level 2)
+        // Example: users/{uid}/ponds/{pondId}/devices/{deviceId}
+        // ============================================================
+        match /{nestedSubcollection}/{nestedDocId} {
+          allow read, write: if isOwner(uid) || isAdminOrSuperAdmin();
+        }
+      }
+    }
+    
+    // ============================================================
+    // ACTIVITIES COLLECTION
+    // ============================================================
+    match /activities/{activityId} {
+      // All authenticated users can read activities
+      allow read: if request.auth != null;
+      // Only admins and superadmins can write activities
+      allow write: if isAdminOrSuperAdmin();
+    }
+    
+    // ============================================================
+    // NOTIFICATIONS COLLECTION
+    // ============================================================
+    match /notifications/{notificationId} {
+      // All authenticated users can read notifications
+      allow read: if request.auth != null;
+      // Only admins and superadmins can write notifications
+      allow write: if isAdminOrSuperAdmin();
+    }
+    
+    // ============================================================
+    // SYSTEM LOGS COLLECTION
+    // ============================================================
+    match /system_logs/{logId} {
+      // Only admins and superadmins can read/write system logs
+      allow read, write: if isAdminOrSuperAdmin();
+    }
+    
+    // ============================================================
+    // SYSTEM ERRORS COLLECTION
+    // ============================================================
+    match /system_errors/{errorId} {
+      // Only admins and superadmins can read/write system errors
+      allow read, write: if isAdminOrSuperAdmin();
+    }
+    
+    // ============================================================
+    // SYSTEM UPTIME COLLECTION
+    // ============================================================
+    match /system_uptime/{uptimeId} {
+      // Only admins and superadmins can read/write uptime data
+      allow read, write: if isAdminOrSuperAdmin();
+    }
+    
+    // ============================================================
+    // SCHEDULED TASKS COLLECTION
+    // ============================================================
+    match /scheduled_tasks/{taskId} {
+      // Only admins and superadmins can read/write scheduled tasks
+      allow read, write: if isAdminOrSuperAdmin();
+    }
+    
+    // ============================================================
+    // SYSTEM UPDATES COLLECTION (APK/Firmware)
+    // ============================================================
+    match /system_updates/{updateId} {
+      // Public read access for APK downloads (anyone can read)
+      allow read: if true;
+      // Only superadmins can publish/update system updates
+      allow write: if isSuperAdmin();
+    }
+    
+    // ============================================================
+    // PENDING REQUESTS COLLECTION (Future use)
+    // ============================================================
+    match /pendingRequests/{requestId} {
+      // Only admins and superadmins can read pending requests
+      allow read: if isAdminOrSuperAdmin();
+      // Authenticated users can create requests, admins/superadmins can update/delete
+      allow create: if request.auth != null;
+      allow update, delete: if isAdminOrSuperAdmin();
+    }
+    
+    // ============================================================
+    // DEFAULT DENY RULE
+    // ============================================================
+    // Deny all other collections by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+  
+  // ============================================================
+  // HELPER FUNCTIONS
+  // ============================================================
+  
+  // Check if the authenticated user owns the document
+  function isOwner(uid) {
+    return request.auth != null && 
+           request.auth.uid == uid;
+  }
+  
+  // Check if the authenticated user is a superadmin
+  // Uses null-safe check to prevent errors if user document doesn't exist
+  function isSuperAdmin() {
+    return request.auth != null &&
+           exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
+  }
+  
+  // Check if the authenticated user is an admin or superadmin
+  // Uses null-safe check to prevent errors if user document doesn't exist
+  function isAdminOrSuperAdmin() {
+    return request.auth != null &&
+           exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           (
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin'
+           );
+  }
+}

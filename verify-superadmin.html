@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify SuperAdmin Setup</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 SuperAdmin Setup Verification</h1>
+        <div id="status"></div>
+        <button onclick="checkStatus()">Check Status</button>
+        <button onclick="showInstructions()">Show Instructions</button>
+        
+        <div id="instructions" style="display: none; margin-top: 20px;">
+            <h2>Setup Instructions</h2>
+            <div class="info">
+                <h3>Step 1: Verify Your User Document in Firestore</h3>
+                <ol>
+                    <li>Go to <a href="https://console.firebase.google.com" target="_blank">Firebase Console</a></li>
+                    <li>Select your project: <code>aquasense-8fef1</code></li>
+                    <li>Navigate to <strong>Firestore Database</strong> → <strong>Data</strong></li>
+                    <li>Open the <code>users</code> collection</li>
+                    <li>Find your user document (use the UID shown above)</li>
+                    <li>Verify it has a <code>role</code> field set to <code>"superadmin"</code></li>
+                    <li>If missing, add the field: <code>role: "superadmin"</code></li>
+                </ol>
+            </div>
+            
+            <div class="warning">
+                <h3>Step 2: Publish Firestore Rules</h3>
+                <ol>
+                    <li>In Firebase Console, go to <strong>Firestore Database</strong> → <strong>Rules</strong></li>
+                    <li>Copy the entire content from <code>firestore.rules</code> file</li>
+                    <li>Paste it into the Rules editor</li>
+                    <li>Click <strong>"Publish"</strong> button</li>
+                    <li>Wait for confirmation that rules are published</li>
+                </ol>
+            </div>
+            
+            <div class="info">
+                <h3>Step 3: Verify Rules Are Active</h3>
+                <p>After publishing, refresh this page and click "Check Status" again.</p>
+                <p>The status should show all checks as ✅ (green).</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db, doc, getDoc, auth } from './firebase-init.js';
+        
+        window.checkStatus = async function() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<div class="info">Checking...</div>';
+            
+            try {
+                let html = '<h2>Verification Results</h2>';
+                
+                // Check 1: User Authentication
+                if (!auth.currentUser) {
+                    html += '<div class="error">❌ Not authenticated. Please log in first.</div>';
+                    statusDiv.innerHTML = html;
+                    return;
+                }
+                
+                const uid = auth.currentUser.uid;
+                html += `<div class="success">✅ Authenticated as: <code>${uid}</code></div>`;
+                
+                // Check 2: User Document Exists
+                const userRef = doc(db, 'users', uid);
+                const userSnap = await getDoc(userRef);
+                
+                if (!userSnap.exists()) {
+                    html += '<div class="error">❌ User document does not exist in Firestore!</div>';
+                    html += '<div class="info">You need to create a user document at <code>users/' + uid + '</code></div>';
+                    statusDiv.innerHTML = html;
+                    return;
+                }
+                
+                html += '<div class="success">✅ User document exists</div>';
+                
+                // Check 3: Role Field Exists
+                const userData = userSnap.data();
+                if (!userData.role) {
+                    html += '<div class="error">❌ User document missing <code>role</code> field!</div>';
+                    html += '<div class="info">Add <code>role: "superadmin"</code> to your user document</div>';
+                    statusDiv.innerHTML = html;
+                    return;
+                }
+                
+                html += `<div class="success">✅ Role field exists: <code>${userData.role}</code></div>`;
+                
+                // Check 4: Role is superadmin
+                if (userData.role !== 'superadmin') {
+                    html += `<div class="error">❌ User role is <code>${userData.role}</code>, not <code>superadmin</code>!</div>`;
+                    html += '<div class="info">Update your user document: <code>role: "superadmin"</code></div>';
+                    statusDiv.innerHTML = html;
+                    return;
+                }
+                
+                html += '<div class="success">✅ User role is superadmin</div>';
+                
+                // Check 5: Try to read all users (permission test)
+                try {
+                    const { collection, getDocs } = await import('./firebase-init.js');
+                    const usersSnapshot = await getDocs(collection(db, 'users'));
+                    html += `<div class="success">✅ Can read users collection (${usersSnapshot.size} users found)</div>`;
+                } catch (permError) {
+                    html += '<div class="error">❌ Cannot read users collection!</div>';
+                    html += '<div class="warning">This means Firestore rules are not published or incorrect.</div>';
+                    html += '<div class="info">Error: ' + permError.message + '</div>';
+                }
+                
+                html += '<div class="success" style="margin-top: 20px;"><strong>✅ All checks passed! You should be able to access the SuperAdmin dashboard.</strong></div>';
+                
+                statusDiv.innerHTML = html;
+            } catch (error) {
+                document.getElementById('status').innerHTML = 
+                    '<div class="error">Error: ' + error.message + '</div>';
+            }
+        };
+        
+        window.showInstructions = function() {
+            const instructions = document.getElementById('instructions');
+            instructions.style.display = instructions.style.display === 'none' ? 'block' : 'none';
+        };
+        
+        // Auto-check on load
+        if (auth.currentUser) {
+            setTimeout(() => checkStatus(), 1000);
+        } else {
+            document.getElementById('status').innerHTML = 
+                '<div class="warning">Please log in first, then refresh this page.</div>';
+        }
+    </script>
+</body>
+</html>
+

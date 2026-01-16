@@ -1,0 +1,1199 @@
+/* Super Admin Dashboard - Split-Screen Master-Detail Layout */
+/* Separate CSS file for super-admin-dashboard.html */
+
+body.super-admin-body {
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+}
+
+/* Two-Column Layout Container */
+.super-admin-layout {
+    display: flex;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #EEECF1 0%, #ADC3D1 100%);
+}
+
+/* Left Sidebar (Fixed) - Navigation */
+.super-sidebar {
+    width: 280px;
+    background: white;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+    position: fixed;
+    height: 100vh;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Sidebar Header/Branding - Pastel Blue & Grey Theme */
+.super-sidebar-header {
+    padding: 2rem 1.5rem;
+    border-bottom: 1px solid #e1e5e9;
+    background: linear-gradient(135deg, #759CC9, #8FB1CC);
+}
+
+.super-sidebar-header .super-nav-logo {
+    display: flex;
+    align-items: center;
+    color: white;
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.super-sidebar-header .super-nav-logo i {
+    margin-right: 0.75rem;
+    font-size: 1.8rem;
+    color: white;
+}
+
+/* User Profile Section */
+.super-sidebar-user {
+    padding: 1.5rem;
+    border-bottom: 1px solid #e1e5e9;
+    background: #EEECF1;
+}
+
+.super-sidebar-user .super-user-profile {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.super-sidebar-user .super-user-profile i {
+    font-size: 2.5rem;
+    color: #759CC9;
+}
+
+.super-sidebar-user .super-user-profile .user-profile {
+    flex: 1;
+    min-width: 0;
+}
+
+.super-sidebar-user .super-user-profile .user-profile span {
+    font-weight: 600;
+    color: #333;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
+
+/* Super Admin Badge */
+.super-admin-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    background: linear-gradient(135deg, #ADC3D1, #8FB1CC);
+    color: #759CC9;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-top: 0.5rem;
+}
+
+.super-admin-badge i {
+    color: #759CC9;
+}
+
+/* Navigation Menu */
+.super-sidebar-nav {
+    flex: 1;
+    padding: 1.5rem 0;
+}
+
+.super-sidebar-nav .super-nav-link,
+.super-sidebar-nav .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    color: #333;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    border-left: 4px solid transparent;
+}
+
+.super-sidebar-nav .super-nav-link:hover,
+.super-sidebar-nav .nav-link:hover {
+    background: rgba(143, 177, 204, 0.15);
+    color: #8FB1CC;
+    border-left-color: #8FB1CC;
+    transform: translateX(2px);
+    transition: all 0.2s ease;
+}
+
+.super-sidebar-nav .super-nav-link.active,
+.super-sidebar-nav .nav-link.active {
+    background: linear-gradient(90deg, rgba(143, 177, 204, 0.2), transparent);
+    color: #759CC9;
+    border-left-color: #8FB1CC;
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1px rgba(143, 177, 204, 0.1);
+}
+
+.super-sidebar-nav .super-nav-link i,
+.super-sidebar-nav .nav-link i {
+    font-size: 1.2rem;
+    width: 24px;
+    text-align: center;
+}
+
+.super-sidebar-nav .super-nav-link span,
+.super-sidebar-nav .nav-link span {
+    font-weight: 500;
+}
+
+/* Sidebar Footer */
+.super-sidebar-footer {
+    padding: 1.5rem;
+    border-top: 1px solid #e1e5e9;
+    background: #EEECF1;
+}
+
+.super-sidebar-footer .super-btn-logout,
+.super-sidebar-footer .btn-logout {
+    width: 100%;
+    background: #949494;
+    color: white;
+    border: none;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.super-sidebar-footer .super-btn-logout:hover,
+.super-sidebar-footer .btn-logout:hover {
+    background: #AEAEAE;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(148, 148, 148, 0.3);
+}
+
+.super-sidebar-footer .super-btn-logout:active,
+.super-sidebar-footer .btn-logout:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 4px rgba(148, 148, 148, 0.2);
+}
+
+/* Main Content Area */
+.main-content.super-content {
+    flex: 1;
+    margin-left: 280px;
+    min-height: 100vh;
+    padding: 0;
+}
+
+.main-content.super-content .container {
+    max-width: 100%;
+    padding: 0;
+    height: 100%;
+}
+
+/* Split-Screen Master-Detail Container */
+.split-screen-container {
+    display: flex;
+    height: calc(100vh - 0px);
+    gap: 0;
+}
+
+/* Master Panel (Left) - List/Table */
+.master-panel {
+    flex: 0 0 45%;
+    background: white;
+    border-right: 1px solid #d0d0d0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.master-panel-header {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #d0d0d0;
+    background: #f5f5f5;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.master-panel-header h1 {
+    font-size: 1.25rem;
+    color: #333;
+    margin: 0 0 0.25rem 0;
+    font-weight: 600;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.master-panel-header p {
+    color: #666;
+    font-size: 0.85rem;
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.master-panel-content {
+    flex: 1;
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* Detail Panel (Right) - Selected Item Details */
+.detail-panel {
+    flex: 0 0 55%;
+    background: #EEECF1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.detail-panel-header {
+    padding: 1.5rem 2rem;
+    border-bottom: 2px solid #e1e5e9;
+    background: white;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.detail-panel-header h2 {
+    font-size: 1.5rem;
+    color: #759CC9;
+    margin: 0;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.detail-panel-header h2 i {
+    color: #8FB1CC;
+}
+
+.detail-panel-content {
+    flex: 1;
+    padding: 2rem;
+}
+
+.detail-panel-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #999;
+    text-align: center;
+}
+
+.detail-panel-empty i {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    color: #ddd;
+}
+
+.detail-panel-empty p {
+    font-size: 1.1rem;
+    margin: 0;
+}
+
+/* Overview Section - Full Width (No Split) - Excel-like Minimal */
+.overview-section.super-overview {
+    padding: 0;
+}
+
+.overview-section.super-overview .container {
+    padding: 0.75rem 1rem;
+}
+
+.dashboard-header.super-header {
+    margin-bottom: 0.75rem;
+    margin-top: 0;
+    padding: 0.75rem 0.5rem;
+    background: #f5f5f5;
+    border-bottom: 1px solid #d0d0d0;
+}
+
+.dashboard-title.super-title {
+    margin-bottom: 0.25rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #333;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.dashboard-subtitle.super-subtitle {
+    font-size: 0.875rem;
+    color: #666;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* User Management Section - Split Screen */
+.user-management-section.super-user-management {
+    padding: 0;
+    height: 100vh;
+}
+
+.user-management-section.super-user-management .container {
+    height: 100%;
+    padding: 0;
+}
+
+/* System Section - Full Width - Excel-like Minimal */
+.system-section.super-system {
+    padding: 0;
+}
+
+.system-section.super-system .container {
+    padding: 0.75rem 1rem;
+}
+
+.page-title.super-page-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem 0.5rem;
+    background: #f5f5f5;
+    border-bottom: 1px solid #d0d0d0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Section Padding Adjustments */
+.overview-section,
+.user-management-section,
+.system-section {
+    padding: 0;
+}
+
+.overview-section.active,
+.user-management-section.active,
+.system-section.active {
+    display: block;
+}
+
+/* Stats Grid for Overview - Excel-like Minimal Cards */
+.stats-grid.super-stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+/* Stat Cards - Clean, Minimal, Excel-like */
+.stats-grid.super-stats-grid .stat-card {
+    background: white;
+    border: 1px solid #d0d0d0;
+    padding: 0.75rem;
+    border-radius: 0;
+    box-shadow: none;
+    transition: border-color 0.1s ease;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.stats-grid.super-stats-grid .stat-card:hover {
+    border-color: #b0b0b0;
+    background: #f9f9f9;
+}
+
+.stats-grid.super-stats-grid .stat-card .stat-icon {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0;
+    margin-right: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f5f5f5;
+    border: 1px solid #d0d0d0;
+}
+
+.stats-grid.super-stats-grid .stat-card .stat-icon i {
+    font-size: 1rem;
+    color: #666;
+}
+
+.stats-grid.super-stats-grid .stat-card .stat-content {
+    flex: 1;
+}
+
+.stats-grid.super-stats-grid .stat-card .stat-content h3 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #666;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.stats-grid.super-stats-grid .stat-card .stat-content .stat-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.25rem;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.stats-grid.super-stats-grid .stat-card .stat-content .stat-change {
+    font-size: 0.7rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0;
+    display: inline-block;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.stats-grid.super-stats-grid .stat-card .stat-content .stat-change.positive {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #c8e6c9;
+}
+
+.stats-grid.super-stats-grid .stat-card .stat-content .stat-change.warning {
+    background: #fff3e0;
+    color: #e65100;
+    border: 1px solid #ffe0b2;
+}
+
+/* Activity Section - Excel-like Table Style */
+.activity-section.super-activity-section {
+    background: white;
+    padding: 0;
+    border: 1px solid #d0d0d0;
+    border-radius: 0;
+    box-shadow: none;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.activity-section.super-activity-section h3 {
+    background: #e8e8e8;
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 1px solid #d0d0d0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.activity-section.super-activity-section .activity-list {
+    padding: 0;
+}
+
+.activity-section.super-activity-section .activity-item {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: background-color 0.1s ease;
+    background: white;
+}
+
+.activity-section.super-activity-section .activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-section.super-activity-section .activity-item:hover {
+    background: #f9f9f9;
+}
+
+.activity-section.super-activity-section .activity-item:nth-child(even) {
+    background: #f9f9f9;
+}
+
+.activity-section.super-activity-section .activity-item:nth-child(even):hover {
+    background: #f0f0f0;
+}
+
+.activity-section.super-activity-section .activity-item i {
+    font-size: 0.875rem;
+    color: #666;
+    width: 1rem;
+    text-align: center;
+}
+
+.activity-section.super-activity-section .activity-item .activity-content {
+    flex: 1;
+}
+
+.activity-section.super-activity-section .activity-item .activity-content p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #333;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.activity-section.super-activity-section .activity-item .activity-content .activity-time {
+    font-size: 0.75rem;
+    color: #999;
+    display: block;
+    margin-top: 0.125rem;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* User Controls in Master Panel */
+.user-controls.super-user-controls {
+    margin: 0;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: #f5f5f5;
+    border-bottom: 1px solid #d0d0d0;
+}
+
+/* Search Box - Excel-like Minimal Styling */
+.user-controls.super-user-controls .search-box {
+    position: relative;
+}
+
+.user-controls.super-user-controls .search-box i {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #666;
+    font-size: 0.8rem;
+}
+
+.user-controls.super-user-controls .search-box input {
+    width: 100%;
+    padding: 0.375rem 0.5rem 0.375rem 1.75rem;
+    border: 1px solid #d0d0d0;
+    border-radius: 0;
+    font-size: 0.875rem;
+    transition: border-color 0.1s ease;
+    background: white;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.user-controls.super-user-controls .search-box input:focus {
+    outline: none;
+    border-color: #4a90e2;
+    background: white;
+    box-shadow: none;
+}
+
+.user-controls.super-user-controls .search-box input::placeholder {
+    color: #999;
+}
+
+/* Filter Buttons */
+.filter-buttons.super-filter-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+/* Filter Button Styles - Excel-like Minimal */
+.filter-buttons.super-filter-buttons .btn-filter {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #d0d0d0;
+    background: white;
+    color: #333;
+    border-radius: 0;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+    font-weight: 400;
+    font-size: 0.8rem;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.filter-buttons.super-filter-buttons .btn-filter:hover {
+    background: #e8e8e8;
+    border-color: #b0b0b0;
+    color: #333;
+}
+
+.filter-buttons.super-filter-buttons .btn-filter.active {
+    background: #d0d0d0;
+    border-color: #b0b0b0;
+    color: #000;
+    font-weight: 600;
+}
+
+.filter-buttons.super-filter-buttons .btn-filter.active:hover {
+    background: #c0c0c0;
+    border-color: #a0a0a0;
+}
+
+/* Users Table in Master Panel - Excel-like Styling */
+.users-table-container.super-users-table {
+    background: white;
+    overflow: auto;
+    flex: 1;
+    border: 1px solid #d0d0d0;
+    min-height: 0;
+    width: 100%;
+}
+
+.users-table.super-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 0.875rem;
+    table-layout: auto;
+}
+
+/* Excel-like Header Row */
+.users-table.super-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+.users-table.super-table th {
+    background: #e8e8e8;
+    padding: 0.375rem 0.5rem;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+    border: 1px solid #d0d0d0;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    border-bottom: 2px solid #b0b0b0;
+    border-right: 1px solid #d0d0d0;
+}
+
+.users-table.super-table th:first-child {
+    border-left: 1px solid #d0d0d0;
+}
+
+/* Excel-like Table Cells */
+.users-table.super-table td {
+    padding: 0.375rem 0.5rem;
+    border: 1px solid #d0d0d0;
+    color: #333;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 0.875rem;
+    background: white;
+    vertical-align: middle;
+}
+
+/* Zebra Striping - Alternating Row Colors */
+.users-table.super-table tbody tr:nth-child(even) {
+    background: #f9f9f9;
+}
+
+.users-table.super-table tbody tr:nth-child(odd) {
+    background: white;
+}
+
+.users-table.super-table tbody tr {
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+
+/* Row Hover - Subtle Highlight */
+.users-table.super-table tbody tr:hover {
+    background: #e3f2fd !important;
+    border: none;
+}
+
+.users-table.super-table tbody tr:hover td {
+    background: #e3f2fd;
+}
+
+/* Selected Row - Subtle Highlight */
+.users-table.super-table tbody tr.selected {
+    background: #bbdefb !important;
+    border: none;
+}
+
+.users-table.super-table tbody tr.selected td {
+    background: #bbdefb;
+    border-color: #90caf9;
+}
+
+/* No Data Message */
+.users-table.super-table .no-data {
+    text-align: center;
+    padding: 1rem;
+    color: #666;
+    font-style: italic;
+    background: white;
+}
+
+/* Detail Panel Content Styles */
+.detail-content-card {
+    background: white;
+    padding: 2rem;
+    border-radius: 10px;
+    box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1.5rem;
+}
+
+.detail-content-card h3 {
+    color: #759CC9;
+    margin-bottom: 1.5rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid #f0f0f0;
+}
+
+.detail-info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 1rem 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.detail-info-row:last-child {
+    border-bottom: none;
+}
+
+.detail-info-label {
+    font-weight: 600;
+    color: #666;
+}
+
+.detail-info-value {
+    color: #333;
+    font-weight: 500;
+}
+
+.detail-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 2rem;
+    padding-top: 2rem;
+    border-top: 2px solid #f0f0f0;
+}
+
+/* Action Buttons - Soft Blue Accents */
+.detail-actions button,
+.action-buttons button {
+    transition: all 0.3s ease;
+}
+
+.detail-actions .btn-secondary,
+.action-buttons .btn-secondary {
+    border: 2px solid #ADC3D1;
+    background: white;
+    color: #759CC9;
+}
+
+.detail-actions .btn-secondary:hover,
+.action-buttons .btn-secondary:hover {
+    background: #8FB1CC;
+    border-color: #8FB1CC;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(143, 177, 204, 0.3);
+}
+
+.detail-actions .btn-secondary:active,
+.action-buttons .btn-secondary:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 4px rgba(143, 177, 204, 0.2);
+}
+
+/* System Subsection Containers */
+.system-subsection {
+    margin-bottom: 2rem;
+}
+
+.system-subsection:first-of-type {
+    margin-top: 0;
+}
+
+/* Subsection Headers - Excel-like Minimal Styling */
+.subsection-header {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #333;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0.75rem 0.5rem;
+    margin: 1.5rem 0 0.75rem 0;
+    background: #f5f5f5;
+    border-bottom: 1px solid #d0d0d0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.subsection-header:first-child {
+    margin-top: 0;
+}
+
+/* System Grid - Excel-like Minimal */
+.system-grid.super-system-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 0.5rem;
+}
+
+/* System Cards - Excel-like Minimal Styling */
+.system-card {
+    background: white;
+    border: 1px solid #d0d0d0;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    transition: border-color 0.1s ease;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.system-card:hover {
+    border-color: #b0b0b0;
+    background: #f9f9f9;
+}
+
+.system-card h3 {
+    background: #e8e8e8;
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 1px solid #d0d0d0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Status List - Excel-like Table Style */
+.system-card .status-list {
+    padding: 0;
+    margin: 0;
+}
+
+.system-card .status-item {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+    transition: background-color 0.1s ease;
+}
+
+.system-card .status-item:last-child {
+    border-bottom: none;
+}
+
+.system-card .status-item:hover {
+    background: #f9f9f9;
+}
+
+.system-card .status-item:nth-child(even) {
+    background: #f9f9f9;
+}
+
+.system-card .status-item:nth-child(even):hover {
+    background: #f0f0f0;
+}
+
+.system-card .status-label {
+    font-size: 0.875rem;
+    color: #333;
+    font-weight: 400;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.system-card .status-value {
+    font-size: 0.875rem;
+    font-weight: 600;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0;
+    border: 1px solid #d0d0d0;
+}
+
+.system-card .status-value.online {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border-color: #c8e6c9;
+}
+
+/* Action Buttons - Excel-like Minimal */
+.system-card .action-buttons {
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.system-card .action-buttons button {
+    padding: 0.375rem 0.75rem;
+    border: 1px solid #d0d0d0;
+    background: white;
+    color: #333;
+    border-radius: 0;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+    font-weight: 400;
+    font-size: 0.875rem;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.system-card .action-buttons button:hover {
+    background: #e8e8e8;
+    border-color: #b0b0b0;
+    color: #333;
+}
+
+.system-card .action-buttons button:active {
+    background: #d0d0d0;
+}
+
+.system-card .action-buttons .btn-warning {
+    background: #fff3e0;
+    border-color: #ffe0b2;
+    color: #e65100;
+}
+
+.system-card .action-buttons .btn-warning:hover {
+    background: #ffe0b2;
+    border-color: #ffcc80;
+    color: #bf360c;
+}
+
+/* Status Value - Offline State */
+.system-card .status-value.offline {
+    background: #ffebee;
+    color: #c62828;
+    border-color: #ef9a9a;
+}
+
+/* Log Lists - Excel-like Table Style */
+.system-card-logs {
+    min-height: 200px;
+}
+
+.system-card .log-list {
+    padding: 0;
+    margin: 0;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.system-card .log-item {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    background: white;
+    transition: background-color 0.1s ease;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.system-card .log-item:last-child {
+    border-bottom: none;
+}
+
+.system-card .log-item:hover {
+    background: #f9f9f9;
+}
+
+.system-card .log-item:nth-child(even) {
+    background: #f9f9f9;
+}
+
+.system-card .log-item:nth-child(even):hover {
+    background: #f0f0f0;
+}
+
+.system-card .log-time {
+    font-size: 0.75rem;
+    color: #999;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.system-card .log-message {
+    font-size: 0.875rem;
+    color: #333;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.system-card .log-item.error .log-message {
+    color: #c62828;
+    font-weight: 600;
+}
+
+.system-card .log-item.warning .log-message {
+    color: #e65100;
+}
+
+.system-card .log-item.info .log-message {
+    color: #1976d2;
+}
+
+/* Form Inputs - Excel-like Focus */
+.user-controls.super-user-controls input:focus,
+.user-controls.super-user-controls select:focus,
+.system-card input:focus,
+.system-card select:focus {
+    outline: none;
+    border-color: #4a90e2;
+    box-shadow: none;
+    background: white;
+}
+
+/* Clickable Elements - Soft Blue Accent */
+a, button, [role="button"] {
+    transition: all 0.2s ease;
+}
+
+a:hover, button:hover, [role="button"]:hover {
+    cursor: pointer;
+}
+
+/* Activity Items - Soft Blue Hover */
+.activity-item {
+    transition: all 0.2s ease;
+    border-radius: 6px;
+    padding: 0.5rem;
+}
+
+.activity-item:hover {
+    background: rgba(143, 177, 204, 0.1);
+    transform: translateX(4px);
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .split-screen-container {
+        flex-direction: column;
+    }
+    
+    .master-panel {
+        flex: 0 0 50%;
+        border-right: none;
+        border-bottom: 2px solid #e1e5e9;
+    }
+    
+    .detail-panel {
+        flex: 0 0 50%;
+    }
+}
+
+@media (max-width: 768px) {
+    .super-admin-layout {
+        flex-direction: column;
+    }
+    
+    .super-sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .main-content.super-content {
+        margin-left: 0 !important;
+    }
+    
+    .split-screen-container {
+        flex-direction: column;
+        height: auto;
+    }
+    
+    .master-panel {
+        flex: 1;
+        border-right: none;
+        border-bottom: 2px solid #e1e5e9;
+    }
+    
+    .detail-panel {
+        flex: 1;
+    }
+    
+    .super-sidebar-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 1rem;
+    }
+    
+    .super-sidebar-nav .super-nav-link,
+    .super-sidebar-nav .nav-link {
+        flex: 1;
+        min-width: 120px;
+        padding: 0.75rem 1rem;
+        border-left: none;
+        border-bottom: 3px solid transparent;
+        justify-content: center;
+    }
+    
+    .super-sidebar-nav .super-nav-link.active,
+    .super-sidebar-nav .nav-link.active {
+        border-left: none;
+        border-bottom-color: #759CC9;
+    }
+    
+    .super-sidebar-nav .super-nav-link:hover,
+    .super-sidebar-nav .nav-link:hover {
+        border-left: none;
+        border-bottom-color: #759CC9;
+    }
+}
+
+@media (max-width: 480px) {
+    .super-sidebar {
+        width: 100%;
+    }
+    
+    .super-sidebar-header {
+        padding: 1.5rem 1rem;
+    }
+    
+    .super-sidebar-user {
+        padding: 1rem;
+    }
+    
+    .super-sidebar-nav {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .super-sidebar-nav .super-nav-link,
+    .super-sidebar-nav .nav-link {
+        min-width: 100%;
+        border-left: 4px solid transparent;
+        border-bottom: none;
+        justify-content: flex-start;
+    }
+    
+    .super-sidebar-nav .super-nav-link.active,
+    .super-sidebar-nav .nav-link.active {
+        border-left-color: #759CC9;
+        border-bottom: none;
+    }
+    
+    .super-sidebar-nav .super-nav-link:hover,
+    .super-sidebar-nav .nav-link:hover {
+        border-left-color: #759CC9;
+        border-bottom: none;
+    }
+    
+    .master-panel-header,
+    .detail-panel-header {
+        padding: 1rem 1.5rem;
+    }
+    
+    .master-panel-content,
+    .detail-panel-content {
+        padding: 1rem 1.5rem;
+    }
+    
+    .overview-section.super-overview .container,
+    .system-section.super-system .container {
+        padding: 0 1.5rem 2rem;
+    }
+}
+

@@ -1,0 +1,613 @@
+<!-- this is user-dashboard.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AquaSense - User Dashboard</title>
+    <link rel="stylesheet" href="main.css">
+    <link rel="stylesheet" href="user-dashboard.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        .chart-controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .chart-controls select {
+            padding: 8px 12px;
+            border: 1px solid #d0dde8;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+        .chart-container {
+            height: 320px;
+            position: relative;
+        }
+        .empty-state {
+            text-align: center;
+            color: #888;
+            padding: 2rem;
+            font-style: italic;
+        }
+        .hidden {
+            display: none;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .status-badge.online {
+            background-color: #10b981;
+            color: white;
+        }
+        .status-badge.offline {
+            background-color: #6b7280;
+            color: white;
+        }
+        .status-badge:not(.online):not(.offline) {
+            background-color: #e5e7eb;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body class="user-dashboard-body">
+    <!-- Two-Column Layout Container -->
+    <div class="dashboard-layout">
+        
+        <!-- Left Sidebar (Fixed) -->
+        <aside class="dashboard-sidebar">
+            <!-- Sidebar Header/Branding -->
+            <div class="sidebar-header">
+                <div class="brand">
+                    <img
+                        src="assets/images/logo/aquasence.logo.png"
+                        alt="AquaSense Logo"
+                        class="app-logo"
+                    />
+                    <span class="brand-text">AquaSense</span>
+                </div>
+            </div>
+            
+            <!-- User Profile Section -->
+            <div class="sidebar-user">
+                <div class="user-profile">
+                    <i class="fas fa-user-circle"></i>
+                    <div>
+                        <div>Loading...</div>
+                        <div>User Account</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Navigation Menu -->
+            <nav class="sidebar-nav">
+                <a href="#dashboard" class="nav-link active">
+                    <i class="fas fa-home"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#monitoring" class="nav-link">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Monitoring</span>
+                </a>
+                <a href="#feeding" class="nav-link">
+                    <i class="fas fa-utensils"></i>
+                    <span>Feeding</span>
+                </a>
+                <a href="#reports" class="nav-link">
+                    <i class="fas fa-chart-bar"></i>
+                    <span>Reports</span>
+                </a>
+            </nav>
+            
+            <!-- Sidebar Footer -->
+            <div class="sidebar-footer">
+                <button class="btn-logout" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Logout</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Right Main Content Area -->
+        <main class="main-content user-dashboard-content">
+        <!-- Dashboard Section -->
+        <section id="dashboard" class="dashboard-section active">
+            <div class="container">
+                <!-- Dashboard Header -->
+                <div class="dashboard-header user-dashboard-header">
+                    <h1 class="dashboard-title user-dashboard-title">Welcome to Your Dashboard</h1>
+                    <p class="dashboard-subtitle user-dashboard-subtitle">Monitor your aquaculture system in real-time</p>
+                </div>
+                
+                <!-- Key Metrics Section -->
+                <div class="section-header">
+                    <h2>Key Metrics</h2>
+                    <div class="stats-grid user-stats-grid">
+                        <div class="stat-card user-stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-thermometer-half"></i>
+                            </div>
+                            <div class="stat-content">
+                                <h3>Water Temperature</h3>
+                                <p class="stat-value" id="waterTempStat">--°C</p>
+                                <span class="stat-status" id="waterTempStatus">--</span>
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card user-stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-tint"></i>
+                            </div>
+                            <div class="stat-content">
+                                <h3>pH Level</h3>
+                                <p class="stat-value" id="phLevelStat">--</p>
+                                <span class="stat-status" id="phLevelStatus">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts and Schedule Section -->
+                <div class="section-header">
+                    <h2>Analytics & Schedule</h2>
+                    <div class="charts-grid user-charts-grid">
+                        <div class="chart-card user-chart-card">
+                            <h3>Water Quality Trends</h3>
+                            <div class="chart-controls">
+                                <select id="chartMetric">
+                                    <option value="temperature">Temperature (°C)</option>
+                                    <option value="ph">pH Level</option>
+                                </select>
+                                <select id="chartRange">
+                                    <option value="daily">Daily</option>
+                                    <option value="weekly">Weekly</option>
+                                    <option value="monthly">Monthly</option>
+                                </select>
+                                <input type="month" id="chartPeriodSelector" style="display: none; padding: 0.5rem 1rem; border: 1px solid #d0dde8; border-radius: 8px; font-size: 1rem; background: white; cursor: pointer;">
+                                <input type="number" id="chartYearSelector" style="display: none; padding: 0.5rem 1rem; border: 1px solid #d0dde8; border-radius: 8px; font-size: 1rem; background: white; cursor: pointer; width: 100px;" min="2020" max="2100">
+                            </div>
+                            <div class="chart-container">
+                                <canvas id="waterQualityChart"></canvas>
+                            </div>
+                            <p id="chartEmptyState" class="empty-state hidden">
+                                No data available. Reports are generated automatically by the system.
+                            </p>
+                        </div>
+                        
+                        <div class="chart-card user-chart-card">
+                            <h3>Feeding Schedule</h3>
+                            <div class="feeding-schedule user-feeding-schedule" id="feedingScheduleList">
+                                <!-- Feeding schedule items will be loaded dynamically from Firestore -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Activity Section -->
+                <div class="activity-section user-activity-section">
+                    <h3>
+                        <i class="fas fa-clock"></i>
+                        Recent Activity
+                    </h3>
+                    <div class="activity-list user-activity-list" id="recentActivityList">
+                        <!-- Recent activity items will be loaded dynamically from Firestore -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Monitoring Section -->
+        <section id="monitoring" class="monitoring-section">
+            <div class="container">
+                <div class="dashboard-header user-dashboard-header page-header">
+                    <h1 class="page-title user-page-title">Water Quality Monitoring</h1>
+                    <p class="page-subtitle">Real-time sensor readings and system alerts</p>
+                </div>
+                
+                <div class="monitoring-grid user-monitoring-grid">
+                    <div class="monitor-card user-monitor-card">
+                        <h3>
+                            <i class="fas fa-chart-line"></i>
+                            Real-time Sensors
+                        </h3>
+                        <div class="sensor-list user-sensor-list">
+                            <div class="sensor-item user-sensor-item">
+                                <i class="fas fa-thermometer-half"></i>
+                                <span>Temperature</span>
+                                <span class="sensor-value user-sensor-value" data-sensor="temperature" id="sensorTemperature">--°C</span>
+                            </div>
+                            <div class="sensor-item user-sensor-item">
+                                <i class="fas fa-tint"></i>
+                                <span>pH Level</span>
+                                <span class="sensor-value user-sensor-value" data-sensor="ph" id="sensorPh">--</span>
+                            </div>
+                            <div class="sensor-item user-sensor-item">
+                                <i class="fas fa-cog"></i>
+                                <span>Feeder</span>
+                                <span class="sensor-value user-sensor-value" data-sensor="feeder" id="sensorFeeder">
+                                    <span class="status-badge" id="feederStatusBadge">--</span>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="monitor-card user-monitor-card">
+                        <h3>
+                            <i class="fas fa-bell"></i>
+                            Alerts & Notifications
+                        </h3>
+                        <div class="alerts-list user-alerts-list">
+                            <div class="alert-item info user-alert-item">
+                                <i class="fas fa-info-circle"></i>
+                                <p id="nextFeedingAlert">Loading next feeding schedule...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Feeding Section -->
+        <section id="feeding" class="feeding-section">
+            <div class="container">
+                <div class="dashboard-header user-dashboard-header page-header">
+                    <h1 class="page-title user-page-title">Feeding Management</h1>
+                    <p class="page-subtitle">Schedule and manage automated feeding operations</p>
+                </div>
+                
+                <div class="feeding-controls user-feeding-controls">
+                    <div class="feeding-schedule-card user-feeding-schedule-card">
+                        <h3>
+                            <i class="fas fa-clock"></i>
+                            Schedule
+                        </h3>
+                        <div class="schedule-list user-schedule-list" id="recentFeedingList">
+                            <!-- Recent feeding history will be loaded dynamically from Firestore -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Reports Section -->
+        <section id="reports" class="reports-section">
+            <div class="container">
+                <div class="dashboard-header user-dashboard-header page-header">
+                    <h1 class="page-title user-page-title">Reports & Analytics</h1>
+                    <p class="page-subtitle">View detailed summaries and historical data</p>
+                </div>
+                
+                <div class="reports-container user-reports-container">
+                    <!-- Hourly Summary Report -->
+                    <div class="report-section user-report-section">
+                        <div class="report-header user-report-header">
+                            <h3>
+                                <i class="fas fa-clock"></i>
+                                Hourly Summary
+                            </h3>
+                        </div>
+                        <!-- Date Selector for Hourly -->
+                        <div class="date-selector-container" style="margin-bottom: 1rem; padding: 0.75rem; background: #f8fafc; border-radius: 8px; display: flex; align-items: center; gap: 1rem;">
+                            <label for="hourlyDateSelector" style="font-weight: 600; color: #2c3e50;">
+                                <i class="fas fa-calendar-day"></i> Select Date:
+                            </label>
+                            <input type="date" id="hourlyDateSelector" style="padding: 0.5rem 1rem; border: 1px solid #d0dde8; border-radius: 8px; font-size: 1rem; background: white; cursor: pointer;">
+                        </div>
+                        <div class="report-table-container user-report-table-container">
+                            <table class="report-table user-report-table" id="hourlySummaryTable">
+                                <thead>
+                                    <tr>
+                                        <th>Hour</th>
+                                        <th>Temperature (°C)</th>
+                                        <th>pH</th>
+                                        <th>Feed Used (kg)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="hourlySummaryTableBody">
+                                    <tr>
+                                        <td colspan="4" class="no-data-text">No hourly data available</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Hourly Charts -->
+                        <div class="report-charts-container" style="margin-top: 2rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                            <div class="chart-wrapper">
+                                <h4 style="margin-bottom: 1rem; color: #2c3e50;">Temperature Trend</h4>
+                                <canvas id="hourlyTemperatureChart"></canvas>
+                            </div>
+                            <div class="chart-wrapper">
+                                <h4 style="margin-bottom: 1rem; color: #2c3e50;">pH Trend</h4>
+                                <canvas id="hourlyPhChart"></canvas>
+                            </div>
+                            <div class="chart-wrapper">
+                                <h4 style="margin-bottom: 1rem; color: #2c3e50;">Feed Used</h4>
+                                <canvas id="hourlyFeedChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Daily Summary Report -->
+                    <div class="report-section user-report-section">
+                        <div class="report-header user-report-header">
+                            <h3>
+                                <i class="fas fa-calendar-day"></i>
+                                Daily Summary
+                            </h3>
+                        </div>
+                        <!-- Month Selector for Daily/Weekly -->
+                        <div class="month-selector-container" style="margin-bottom: 1rem; padding: 0.75rem; background: #f8fafc; border-radius: 8px; display: flex; align-items: center; gap: 1rem;">
+                            <label for="reportMonthSelector" style="font-weight: 600; color: #2c3e50;">
+                                <i class="fas fa-calendar"></i> Select Month:
+                            </label>
+                            <input type="month" id="reportMonthSelector" style="padding: 0.5rem 1rem; border: 1px solid #d0dde8; border-radius: 8px; font-size: 1rem; background: white; cursor: pointer;">
+                        </div>
+                            <div class="report-actions user-report-actions">
+                                <button class="btn-export btn-export-excel" onclick="exportDailyReport('excel')" title="Export to Excel">
+                                    <i class="fas fa-file-excel"></i> Excel
+                                </button>
+                                <button class="btn-export btn-export-word" onclick="exportDailyReport('word')" title="Export to Word">
+                                    <i class="fas fa-file-word"></i> Word
+                                </button>
+                                <button class="btn-export btn-export-pdf" onclick="exportDailyReport('pdf')" title="Export to PDF">
+                                    <i class="fas fa-file-pdf"></i> PDF
+                                </button>
+                            </div>
+                        </div>
+                        <div class="report-table-container user-report-table-container">
+                            <table class="report-table user-report-table" id="dailySummaryTable">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Feed Used (kg)</th>
+                                        <th>Avg Temperature (°C)</th>
+                                        <th>Avg pH</th>
+                                        <th>Water Quality</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dailySummaryTableBody">
+                                    <tr>
+                                        <td colspan="5" class="no-data-text">No daily summary data available</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Daily Charts -->
+                        <div class="report-charts-container" style="margin-top: 2rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                            <div class="chart-wrapper">
+                                <h4 style="margin-bottom: 1rem; color: #2c3e50;">Temperature Trend</h4>
+                                <canvas id="dailyTemperatureChart"></canvas>
+                            </div>
+                            <div class="chart-wrapper">
+                                <h4 style="margin-bottom: 1rem; color: #2c3e50;">pH Trend</h4>
+                                <canvas id="dailyPhChart"></canvas>
+                            </div>
+                            <div class="chart-wrapper">
+                                <h4 style="margin-bottom: 1rem; color: #2c3e50;">Feed Used</h4>
+                                <canvas id="dailyFeedChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Weekly Summary Report -->
+                    <div class="report-section user-report-section">
+                        <div class="report-header user-report-header">
+                            <h3>
+                                <i class="fas fa-calendar-week"></i>
+                                Weekly Summary
+                            </h3>
+                            <div class="report-actions user-report-actions">
+                                <button class="btn-export btn-export-excel" onclick="exportWeeklyReport('excel')" title="Export to Excel">
+                                    <i class="fas fa-file-excel"></i> Excel
+                                </button>
+                                <button class="btn-export btn-export-word" onclick="exportWeeklyReport('word')" title="Export to Word">
+                                    <i class="fas fa-file-word"></i> Word
+                                </button>
+                                <button class="btn-export btn-export-pdf" onclick="exportWeeklyReport('pdf')" title="Export to PDF">
+                                    <i class="fas fa-file-pdf"></i> PDF
+                                </button>
+                            </div>
+                        </div>
+                        <div class="report-table-container user-report-table-container">
+                            <table class="report-table user-report-table" id="weeklySummaryTable">
+                                <thead>
+                                    <tr>
+                                        <th>Period</th>
+                                        <th>Total Feed (kg)</th>
+                                        <th>Avg pH</th>
+                                        <th>Avg Temperature (°C)</th>
+                                        <th>Coverage Days</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="weeklySummaryTableBody">
+                                    <tr>
+                                        <td colspan="5" class="no-data-text">No weekly summary data available</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Weekly Charts -->
+                        <div class="report-charts-container" style="margin-top: 2rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                            <div class="chart-wrapper">
+                                <h4 style="margin-bottom: 1rem; color: #2c3e50;">Temperature Trend</h4>
+                                <canvas id="weeklyTemperatureChart"></canvas>
+                            </div>
+                            <div class="chart-wrapper">
+                                <h4 style="margin-bottom: 1rem; color: #2c3e50;">pH Trend</h4>
+                                <canvas id="weeklyPhChart"></canvas>
+                            </div>
+                            <div class="chart-wrapper">
+                                <h4 style="margin-bottom: 1rem; color: #2c3e50;">Total Feed</h4>
+                                <canvas id="weeklyFeedChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Monthly Summary Report -->
+                    <div class="report-section user-report-section">
+                        <div class="report-header user-report-header">
+                            <h3>
+                                <i class="fas fa-calendar-alt"></i>
+                                Monthly Summary
+                            </h3>
+                        </div>
+                        <!-- Year Selector for Monthly -->
+                        <div class="year-selector-container" style="margin-bottom: 1rem; padding: 0.75rem; background: #f8fafc; border-radius: 8px; display: flex; align-items: center; gap: 1rem;">
+                            <label for="reportYearSelector" style="font-weight: 600; color: #2c3e50;">
+                                <i class="fas fa-calendar-alt"></i> Select Year:
+                            </label>
+                            <input type="number" id="reportYearSelector" min="2020" max="2100" style="padding: 0.5rem 1rem; border: 1px solid #d0dde8; border-radius: 8px; font-size: 1rem; background: white; cursor: pointer; width: 120px;">
+                        </div>
+                            <div class="report-actions user-report-actions">
+                                <button class="btn-export btn-export-excel" onclick="exportMonthlyReport('excel')" title="Export to Excel">
+                                    <i class="fas fa-file-excel"></i> Excel
+                                </button>
+                                <button class="btn-export btn-export-word" onclick="exportMonthlyReport('word')" title="Export to Word">
+                                    <i class="fas fa-file-word"></i> Word
+                                </button>
+                                <button class="btn-export btn-export-pdf" onclick="exportMonthlyReport('pdf')" title="Export to PDF">
+                                    <i class="fas fa-file-pdf"></i> PDF
+                                </button>
+                            </div>
+                        </div>
+                        <div class="report-table-container user-report-table-container">
+                            <table class="report-table user-report-table" id="monthlySummaryTable">
+                                <thead>
+                                    <tr>
+                                        <th>Month</th>
+                                        <th>Total Feed (kg)</th>
+                                        <th>Avg pH</th>
+                                        <th>Avg Temperature (°C)</th>
+                                        <th>Coverage Days</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="monthlySummaryTableBody">
+                                    <tr>
+                                        <td colspan="5" class="no-data-text">No monthly summary data available</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <!-- Monthly Charts -->
+                        <div class="report-charts-container" style="margin-top: 2rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+                            <div class="chart-wrapper">
+                                <h4 style="margin-bottom: 1rem; color: #2c3e50;">Temperature Trend</h4>
+                                <canvas id="monthlyTemperatureChart"></canvas>
+                            </div>
+                            <div class="chart-wrapper">
+                                <h4 style="margin-bottom: 1rem; color: #2c3e50;">pH Trend</h4>
+                                <canvas id="monthlyPhChart"></canvas>
+                            </div>
+                            <div class="chart-wrapper">
+                                <h4 style="margin-bottom: 1rem; color: #2c3e50;">Total Feed</h4>
+                                <canvas id="monthlyFeedChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Harvest Mortality Log Report -->
+                    <div class="report-section user-report-section">
+                        <div class="report-header user-report-header">
+                            <h3>
+                                <i class="fas fa-fish"></i>
+                                Harvest Mortality Log
+                            </h3>
+                            <div class="report-actions user-report-actions">
+                                <button class="btn-export btn-export-excel" onclick="exportMortalityReport('excel')" title="Export to Excel">
+                                    <i class="fas fa-file-excel"></i> Excel
+                                </button>
+                                <button class="btn-export btn-export-word" onclick="exportMortalityReport('word')" title="Export to Word">
+                                    <i class="fas fa-file-word"></i> Word
+                                </button>
+                                <button class="btn-export btn-export-pdf" onclick="exportMortalityReport('pdf')" title="Export to PDF">
+                                    <i class="fas fa-file-pdf"></i> PDF
+                                </button>
+                            </div>
+                        </div>
+                        <div class="report-table-container user-report-table-container">
+                            <table class="report-table user-report-table" id="mortalityLogTable">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Time</th>
+                                        <th>Mortality Count</th>
+                                        <th>Cause</th>
+                                        <th>Notes</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mortalityLogTableBody">
+                                    <tr>
+                                        <td colspan="5" class="no-data-text">No mortality log data available</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Sensor Analytics & Data Insights -->
+                    <div class="report-section user-report-section">
+                        <div class="report-header user-report-header">
+                            <h3>
+                                <i class="fas fa-chart-bar"></i>
+                                Sensor Analytics & Data Insights
+                            </h3>
+                            <div class="report-actions user-report-actions">
+                                <select id="analyticsPeriodSelector" style="padding: 8px 12px; border: 1px solid #d0dde8; border-radius: 6px; font-size: 14px; background: white; cursor: pointer; margin-right: 8px;">
+                                    <option value="daily">Daily</option>
+                                    <option value="weekly">Weekly</option>
+                                    <option value="monthly">Monthly</option>
+                                </select>
+                                <input type="date" id="analyticsDateSelector" style="padding: 8px 12px; border: 1px solid #d0dde8; border-radius: 6px; font-size: 14px; background: white; cursor: pointer; margin-right: 8px; display: none;">
+                                <input type="month" id="analyticsMonthSelector" style="padding: 8px 12px; border: 1px solid #d0dde8; border-radius: 6px; font-size: 14px; background: white; cursor: pointer; margin-right: 8px; display: none;">
+                            </div>
+                        </div>
+                        
+                        <!-- Analytics Cards -->
+                        <div id="analyticsCardsContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; padding: 1rem 0;">
+                            <!-- Cards will be dynamically loaded here -->
+                        </div>
+                        
+                        <!-- Analytics Details Table -->
+                        <div class="report-table-container user-report-table-container">
+                            <table class="report-table user-report-table" id="analyticsDetailsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Period</th>
+                                        <th>Temp Availability</th>
+                                        <th>pH Availability</th>
+                                        <th>Both Sensors</th>
+                                        <th>No Data Hours</th>
+                                        <th>Temp Trend</th>
+                                        <th>pH Trend</th>
+                                        <th>Both Sensors Trend</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="analyticsDetailsTableBody">
+                                    <tr>
+                                        <td colspan="8" class="no-data-text">Loading analytics data...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        </main>
+    </div>
+
+    <script type="module" src="firebase-init.js"></script>
+    <script type="module" src="main.js"></script>
+</body>
+</html>
+
+ 

@@ -1,0 +1,937 @@
+================================================================================
+AQUASENSE WEB APPLICATION - COMPLETE SYSTEM ARCHITECTURE SUMMARY
+================================================================================
+Purpose: Comprehensive documentation of JavaScript system architecture
+         for PHP backend conversion planning
+Date: Generated for backend migration analysis
+================================================================================
+
+TABLE OF CONTENTS
+================================================================================
+1. FILE STRUCTURE & MODULE OVERVIEW
+2. FIREBASE INITIALIZATION & CONFIGURATION
+3. AUTHENTICATION SYSTEM FLOW
+4. DASHBOARD INITIALIZATION PROCESSES
+5. DATA FLOW: SENSORS → REPORTS
+6. FIRESTORE DATA STRUCTURE
+7. REALTIME DATABASE (RTDB) STRUCTURE
+8. REPORT GENERATION SYSTEM
+9. UI COMPONENTS & INTERACTIONS
+10. API ENDPOINTS (CURRENT JS → FUTURE PHP)
+11. SECURITY CONSIDERATIONS
+12. MIGRATION CHECKLIST
+
+================================================================================
+1. FILE STRUCTURE & MODULE OVERVIEW
+================================================================================
+
+CORE MODULES:
+-------------
+firebase-init.js
+  Purpose: Firebase SDK initialization and exports
+  Exports: app, db (Firestore), rtdb (Realtime DB), auth, analytics
+  Functions: Initializes Firebase services, exports helper functions
+  Dependencies: Firebase CDN (v10.12.3)
+  
+main.js
+  Purpose: Application entry point and page routing
+  Functions:
+    - initializeApp() - Main initialization dispatcher
+    - initializeIndexPage() - Landing page setup
+    - initializeUserPage() - User dashboard entry
+    - initializeAdminPage() - Admin dashboard entry
+    - initializeSuperAdminPage() - Super admin dashboard entry
+  Dependencies: ui.js, notifications.js, auth.js, dashboard.js, utils.js
+
+auth.js
+  Purpose: Authentication and user management
+  Functions:
+    - verifyRoleOrRedirect(requiredRoles) - Role-based access control
+    - handleLogin() - User login process
+    - handleSignup() - User registration process
+    - logout() - User logout with cleanup
+    - updateUserDisplayName() - Update UI with user info
+  Data Operations:
+    - Reads: users/{uid} from Firestore
+    - Writes: users/{uid} on signup
+    - Session: Stores isLoggedIn, userType, userUid, userEmail
+
+dashboard.js
+  Purpose: Dashboard functionality, reports, sensor monitoring
+  Size: ~6500+ lines
+  Key Sections:
+    - Report initialization system
+    - Sensor data loading and real-time updates
+    - Feeding schedule management
+    - Report generation (hourly/daily/weekly/monthly)
+    - Chart rendering
+    - Device control (RTDB)
+  Dependencies: firebase-init.js, auth.js, utils.js, notifications.js
+
+ui.js
+  Purpose: UI components and modal management
+  Functions:
+    - openModal(modalId) - Open modal dialogs
+    - closeModal(modalId) - Close modal dialogs
+    - switchModal(from, to) - Switch between modals
+    - initializeNavigation() - Navigation menu setup
+    - scrollToSection(sectionId) - Smooth scrolling
+    - confirmAction() - Custom confirmation dialogs
+    - confirmDelete() - Delete confirmation wrapper
+  Features: Modal click-outside, Escape key handling, focus trapping
+
+notifications.js
+  Purpose: Toast notification system
+  Functions:
+    - showNotification(message, type) - Display notifications
+    - setupGlobalNotifications() - Make function globally accessible
+  Types: success, error, warning, info
+  Behavior: Auto-dismiss after 5 seconds, manual close button
+
+utils.js
+  Purpose: Utility functions and helpers
+  Functions:
+    - pbkdf2Hash() - Password hashing (PBKDF2)
+    - generateSalt() - Salt generation
+    - isValidEmail() - Email validation
+    - getPasswordStrength() - Password strength calculation
+    - formatDate() - Date formatting
+    - scrollToSection() - Smooth scroll utility
+    - setupFormValidation() - Form validation setup
+    - setupScrollAnimations() - Scroll-triggered animations
+
+================================================================================
+2. FIREBASE INITIALIZATION & CONFIGURATION
+================================================================================
+
+INITIALIZATION SEQUENCE:
+------------------------
+1. Load Firebase SDKs from CDN (v10.12.3)
+2. Initialize Firebase App with config
+3. Initialize Firestore (db)
+4. Initialize Realtime Database (rtdb)
+5. Initialize Authentication (auth)
+6. Initialize Analytics (optional, non-blocking)
+
+CONFIGURATION OBJECT:
+---------------------
+{
+  apiKey: 'AIzaSyBXh2XVeKkecjy0tGisPzgNyzXIOdFxK6U',
+  authDomain: 'aquasense-8fef1.firebaseapp.com',
+  databaseURL: 'https://aquasense-8fef1-default-rtdb.firebaseio.com',
+  projectId: 'aquasense-8fef1',
+  storageBucket: 'aquasense-8fef1.firebasestorage.app',
+  messagingSenderId: '1052942345206',
+  appId: '1:1052942345206:web:98d03f840be6b8525f9dd7',
+  measurementId: 'G-X0KN9WE0BM'
+}
+
+EXPORTED SERVICES:
+-----------------
+- app: Firebase App instance
+- db: Firestore database instance
+- rtdb: Realtime Database instance
+- auth: Firebase Auth instance
+- analytics: Firebase Analytics instance (optional)
+
+EXPORTED FUNCTIONS:
+------------------
+Firestore: doc, getDoc, setDoc, collection, getDocs, updateDoc, deleteDoc,
+           query, where, orderBy, addDoc, serverTimestamp, limit, onSnapshot,
+           runTransaction, increment
+
+Auth: createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
+      onAuthStateChanged
+
+RTDB: ref, set, get, update, remove, onValue, off, push
+
+================================================================================
+3. AUTHENTICATION SYSTEM FLOW
+================================================================================
+
+LOGIN PROCESS:
+--------------
+1. User enters email and password in login form
+2. handleLogin() called on form submit
+3. Email validation (isValidEmail)
+4. Firebase Auth signInWithEmailAndPassword(email, password)
+5. On success: Get user document from Firestore (users/{uid})
+6. Extract role from user document (user/admin/superadmin)
+7. Store in sessionStorage:
+   - isLoggedIn: 'true'
+   - userType: role
+   - userUid: firebaseUser.uid
+   - userEmail: email (lowercase)
+8. Redirect based on role:
+   - superadmin → super-admin-dashboard.html
+   - admin → admin-dashboard.html
+   - user → user-dashboard.html
+
+SIGNUP PROCESS:
+---------------
+1. User fills signup form (firstName, lastName, email, password, confirmPassword)
+2. handleSignup() called on form submit
+3. Validation:
+   - All fields required
+   - Email format validation
+   - Password minimum 8 characters
+   - Password match confirmation
+   - Terms acceptance checkbox
+4. Firebase Auth createUserWithEmailAndPassword(email, password)
+5. Create user document in Firestore:
+   Path: users/{firebaseUid}
+   Data: {
+     firstName: string,
+     lastName: string,
+     email: string (lowercase),
+     role: 'user' (default),
+     isActive: true,
+     createdAt: timestamp,
+     firebaseUid: string
+   }
+6. Store in sessionStorage (same as login)
+7. Redirect to user-dashboard.html
+
+ROLE VERIFICATION:
+------------------
+verifyRoleOrRedirect(requiredRoles):
+1. Check sessionStorage for isLoggedIn and userUid
+2. If missing → redirect to index.html
+3. Read user document from Firestore (users/{uid})
+4. Check if user.role is in requiredRoles array
+5. If not authorized → redirect to index.html
+6. Return user data if authorized
+
+LOGOUT PROCESS:
+---------------
+1. Show confirmation dialog (confirmAction)
+2. If confirmed:
+   - Firebase Auth signOut()
+   - Clear localStorage
+   - Clear sessionStorage
+   - Redirect to index.html
+   - Prevent back navigation
+
+SESSION STORAGE KEYS:
+---------------------
+- isLoggedIn: 'true' | null
+- userType: 'user' | 'admin' | 'superadmin'
+- userUid: Firebase UID string
+- userEmail: Email address (lowercase)
+
+================================================================================
+4. DASHBOARD INITIALIZATION PROCESSES
+================================================================================
+
+USER DASHBOARD INITIALIZATION (initializeUserDashboard):
+--------------------------------------------------------
+Execution Order:
+1. Verify role and redirect if unauthorized
+2. Update user display name in navigation
+3. Initialize report collections (background, non-blocking):
+   a. Seed collections (hourly/daily/weekly/monthly) if empty
+   b. Start hourly sampler (runs every 5 minutes)
+   c. Generate daily report for today
+   d. Generate weekly report for current week
+   e. Generate monthly report for current month
+4. Load sensor data (temperature, pH, feeder status)
+5. Setup real-time sensor listeners (onSnapshot)
+6. Update next feeding alert
+7. Setup feeding alert auto-refresh
+8. Load feeding schedules
+9. Setup feeding schedule auto-refresh
+10. Initialize summary computation system
+11. Initialize report selectors (date/month/year)
+12. Load all reports (hourly/daily/weekly/monthly/mortality)
+13. Initialize water quality chart
+14. Setup navigation and UI interactions
+
+ADMIN DASHBOARD INITIALIZATION (initializeAdminDashboard):
+----------------------------------------------------------
+1. Verify role (admin or superadmin)
+2. Load user statistics
+3. Load all users list
+4. Setup user management functions
+5. Initialize device management
+6. Setup search and filter functionality
+
+SUPER ADMIN DASHBOARD INITIALIZATION (initializeSuperAdminDashboard):
+----------------------------------------------------------------------
+1. Verify role (superadmin only)
+2. Load user statistics
+3. Load pending requests
+4. Load all users
+5. Load system logs
+6. Load error logs
+7. Load uptime history
+8. Load scheduled tasks
+9. Load firmware versions
+10. Load APK info
+11. Setup search and filter functionality
+
+================================================================================
+5. DATA FLOW: SENSORS → REPORTS
+================================================================================
+
+HIERARCHICAL AGGREGATION PIPELINE:
+-----------------------------------
+Sensors (Latest) → Hourly Records → Daily Reports → Weekly Reports → Monthly Reports
+
+STEP 1: SENSOR DATA COLLECTION
+-------------------------------
+Source: users/{uid}/sensors/temperature
+         users/{uid}/sensors/ph
+         users/{uid}/sensors/feeder
+
+Structure:
+{
+  type: "sensor" | "device",
+  value: number | string,
+  updatedAt: Timestamp
+}
+
+Real-time Updates:
+- onSnapshot() listeners watch sensor documents
+- UI updates immediately when Firestore changes
+- Feeder status mirrored to RTDB automatically
+
+STEP 2: HOURLY SAMPLING (Background Process)
+---------------------------------------------
+Function: sampleCurrentHour(uid)
+Frequency: Every 5 minutes (configurable)
+Process:
+1. Read latest sensor values (temperature, pH)
+2. Get current date (YYYY-MM-DD) and hour (00-23)
+3. Use Firestore transaction to atomically update:
+   Path: users/{uid}/hourlyRecords/{dateStr}/hours/{hourStr}
+   Data Structure:
+   {
+     hour: "HH" (00-23),
+     temperatureSum: number (incremented),
+     temperatureCount: number (incremented),
+     temperatureAvg: number (calculated),
+     phSum: number (incremented),
+     phCount: number (incremented),
+     phAvg: number (calculated),
+     feedUsedKg: number (from feeding schedules),
+     isSeed: boolean,
+     source: "web",
+     updatedAt: Timestamp
+   }
+4. Transaction ensures atomic updates (no race conditions)
+5. Only writes if at least one sensor value is valid
+
+STEP 3: DAILY REPORT GENERATION
+-------------------------------
+Function: generateDailyReport(uid, dateStr)
+Trigger: Automatic (on dashboard load) or manual
+Process:
+1. Read all hour documents from: users/{uid}/hourlyRecords/{dateStr}/hours
+2. Filter out seed documents (isSeed: true)
+3. Aggregate data:
+   - Calculate weighted average temperature (sum/count)
+   - Calculate weighted average pH (sum/count)
+   - Sum feedUsedKg from hourly records
+   - Count coverageHours (hours with data)
+4. Write to: users/{uid}/dailyReports/{dateStr}
+   Data Structure:
+   {
+     date: "YYYY-MM-DD",
+     avgTemperature: number | null,
+     avgPh: number | null,
+     totalFeedKg: number | null,
+     coverageHours: number,
+     isSeed: boolean,
+     generatedAt: Timestamp,
+     source: "web"
+   }
+5. Only writes if coverageHours > 0 (has real data)
+
+STEP 4: WEEKLY REPORT GENERATION
+---------------------------------
+Function: generateWeeklyReport(uid, isoWeekString)
+Trigger: Automatic or manual
+Process:
+1. Parse ISO week string (YYYY-WW format)
+2. Get all 7 dates in the ISO week
+3. Read dailyReports collection
+4. Filter daily reports:
+   - Match dates in the week
+   - Exclude seed documents (isSeed: true)
+5. Aggregate from daily reports:
+   - Average of daily avgTemperature
+   - Average of daily avgPh
+   - Sum of daily totalFeedKg
+   - Count coverageDays
+6. Write to: users/{uid}/weeklyReports/{isoWeekString}
+   Data Structure:
+   {
+     week: "YYYY-WW",
+     avgTemperature: number | null,
+     avgPh: number | null,
+     totalFeedKg: number | null,
+     coverageDays: number,
+     isSeed: boolean,
+     generatedAt: Timestamp,
+     source: "web"
+   }
+7. Only writes if coverageDays > 0
+
+STEP 5: MONTHLY REPORT GENERATION
+----------------------------------
+Function: generateMonthlyReport(uid, year, month)
+Trigger: Automatic or manual
+Process:
+1. Get all dates in the month
+2. Read dailyReports collection
+3. Filter daily reports:
+   - Match month (YYYY-MM format)
+   - Exclude seed documents (isSeed: true)
+4. Aggregate from daily reports:
+   - Average of daily avgTemperature
+   - Average of daily avgPh
+   - Sum of daily totalFeedKg
+   - Count coverageDays
+5. Write to: users/{uid}/monthlyReports/{YYYY-MM}
+   Data Structure:
+   {
+     month: "YYYY-MM",
+     avgTemperature: number | null,
+     avgPh: number | null,
+     totalFeedKg: number | null,
+     coverageDays: number,
+     isSeed: boolean,
+     generatedAt: Timestamp,
+     source: "web"
+   }
+6. Only writes if coverageDays > 0
+
+SEED DOCUMENTS (UI Safety):
+---------------------------
+Purpose: Prevent UI crashes when collections are empty
+Created When: Collection is empty (no documents exist)
+Marked With: isSeed: true
+Excluded From: Aggregation calculations, chart rendering
+Structure: Same as real reports but with zero values
+
+Seed Functions:
+- seedHourlyIfEmpty(uid, dateStr) - Creates hour/00 seed
+- seedDailyIfEmpty(uid, dateStr) - Creates daily seed
+- seedWeeklyIfEmpty(uid, weekStr) - Creates weekly seed
+- seedMonthlyIfEmpty(uid, monthStr) - Creates monthly seed
+
+================================================================================
+6. FIRESTORE DATA STRUCTURE
+================================================================================
+
+ROOT COLLECTIONS:
+-----------------
+users/{uid}/
+  ├── sensors/
+  │   ├── temperature/
+  │   │   └── { value: number, updatedAt: Timestamp }
+  │   ├── ph/
+  │   │   └── { value: number, updatedAt: Timestamp }
+  │   └── feeder/
+  │       └── { type: "device", value: "Online"|"Offline", updatedAt: Timestamp }
+  │
+  ├── hourlyRecords/
+  │   └── {YYYY-MM-DD}/
+  │       └── hours/
+  │           └── {HH}/
+  │               └── { hour, temperatureSum, temperatureCount, temperatureAvg,
+  │                     phSum, phCount, phAvg, feedUsedKg, isSeed, source, updatedAt }
+  │
+  ├── dailyReports/
+  │   └── {YYYY-MM-DD}/
+  │       └── { date, avgTemperature, avgPh, totalFeedKg, coverageHours,
+  │             isSeed, generatedAt, source }
+  │
+  ├── weeklyReports/
+  │   └── {YYYY-WW}/
+  │       └── { week, avgTemperature, avgPh, totalFeedKg, coverageDays,
+  │             isSeed, generatedAt, source }
+  │
+  ├── monthlyReports/
+  │   └── {YYYY-MM}/
+  │       └── { month, avgTemperature, avgPh, totalFeedKg, coverageDays,
+  │             isSeed, generatedAt, source }
+  │
+  ├── feedingSchedules/
+  │   └── {scheduleId}/
+  │       └── { title, scheduledTime, feedAmount, notes, status, createdAt }
+  │
+  ├── mortalityLogs/
+  │   └── {logId}/
+  │       └── { timestamp, count, cause, notes }
+  │
+  ├── devices/
+  │   └── {deviceId}/
+  │       └── { enabled, type, status, ... }
+  │
+  └── ponds/
+      └── {pondId}/
+          └── { name, devices: [...], ... }
+
+USER DOCUMENT:
+--------------
+Path: users/{uid}
+Structure:
+{
+  firstName: string,
+  lastName: string,
+  email: string (lowercase),
+  role: "user" | "admin" | "superadmin",
+  isActive: boolean,
+  createdAt: timestamp,
+  firebaseUid: string
+}
+
+================================================================================
+7. REALTIME DATABASE (RTDB) STRUCTURE
+================================================================================
+
+PURPOSE: Device control and status for ESP32 communication
+ARCHITECTURE: Web app writes → ESP32 reads (read-only for ESP32)
+
+DATA STRUCTURE:
+---------------
+devices/{deviceId}/
+  ├── commands/
+  │   └── feeder/
+  │       └── {
+  │             state: "on" | "off",
+  │             updatedAt: timestamp (Date.now()),
+  │             source: "web"
+  │           }
+  │
+  └── status/
+      └── feeder/
+          └── {
+                state: "online" | "offline",
+                updatedAt: timestamp (Date.now()),
+                source: "web"
+              }
+
+MIRRORING PROCESS:
+------------------
+1. Firestore listener watches: users/{uid}/sensors/feeder
+2. On value change:
+   - Normalize value to lowercase ("online" | "offline")
+   - Update UI immediately
+   - Mirror to RTDB: devices/{deviceId}/status/feeder
+3. Prevents duplicate writes (caching mechanism)
+4. No circular writes (Firestore → RTDB only)
+
+ESP32 READ PATH:
+----------------
+/devices/{deviceId}/commands/feeder/state
+Expected Values: "on" | "off"
+
+================================================================================
+8. REPORT GENERATION SYSTEM
+================================================================================
+
+INITIALIZATION FLOW:
+--------------------
+1. Seed Collections (if empty):
+   - seedHourlyIfEmpty() - Creates date doc + hour/00 seed
+   - seedDailyIfEmpty() - Creates daily seed for today
+   - seedWeeklyIfEmpty() - Creates weekly seed for current week
+   - seedMonthlyIfEmpty() - Creates monthly seed for current month
+
+2. Start Hourly Sampler:
+   - Runs every 5 minutes
+   - Samples current hour
+   - Updates hourly records atomically
+
+3. Generate Reports (if data exists):
+   - generateDailyReport() - From hourly records
+   - generateWeeklyReport() - From daily reports
+   - generateMonthlyReport() - From daily reports
+
+REPORT LOADING FUNCTIONS:
+-------------------------
+loadHourlyReport():
+  - Reads: users/{uid}/hourlyRecords/{selectedDate}/hours
+  - Filters: Removes seed documents
+  - Displays: Table with hour, temperature, pH, feed
+  - Charts: Temperature, pH, Feed trends
+
+loadDailySummaryReport():
+  - Reads: users/{uid}/dailyReports
+  - Filters: By selected month (YYYY-MM)
+  - Displays: Table with date, feed, temperature, pH, water quality
+  - Charts: Temperature, pH, Feed trends
+
+loadWeeklySummaryReport():
+  - Reads: users/{uid}/weeklyReports
+  - Filters: By selected month (weeks overlapping month)
+  - Displays: Table with period, total feed, avg pH, avg temp, coverage
+  - Charts: Temperature, pH, Feed trends
+
+loadMonthlySummaryReport():
+  - Reads: users/{uid}/monthlyReports
+  - Filters: By selected year (YYYY)
+  - Displays: Table with month, total feed, avg pH, avg temp, coverage
+  - Charts: Temperature, pH, Feed trends
+
+CHART RENDERING:
+---------------
+Functions:
+- renderDailyCharts(reports) - Chart.js line/bar charts
+- renderWeeklyCharts(reports) - Chart.js line/bar charts
+- renderMonthlyCharts(reports) - Chart.js line/bar charts
+- renderHourlyCharts(reports) - Chart.js line/bar charts
+- renderWaterQualityChart() - Interactive chart with selectors
+
+Features:
+- Seed-aware (filters out seed documents)
+- Empty state handling ("No data yet" messages)
+- Chart instance management (cleanup on re-render)
+- Responsive design
+
+EXPORT FUNCTIONS:
+----------------
+- exportDailyReport(format) - Excel/CSV, Word, PDF
+- exportWeeklyReport(format) - Excel/CSV, Word, PDF
+- exportMonthlyReport(format) - Excel/CSV, Word, PDF
+- exportMortalityReport(format) - Excel/CSV, Word, PDF
+
+================================================================================
+9. UI COMPONENTS & INTERACTIONS
+================================================================================
+
+NAVIGATION SYSTEM:
+-----------------
+- Sidebar navigation (fixed left)
+- Section-based routing (Dashboard, Monitoring, Feeding, Reports)
+- Active state management
+- Smooth scrolling
+
+MODAL SYSTEM:
+-------------
+- Login modal
+- Signup modal
+- Confirmation dialogs
+- Click-outside-to-close
+- Escape key to close
+- Focus trapping
+
+NOTIFICATION SYSTEM:
+-------------------
+- Toast-style notifications
+- Types: success, error, warning, info
+- Auto-dismiss (5 seconds)
+- Manual close button
+- Position: Top-right, fixed
+
+FORM VALIDATION:
+---------------
+- Real-time password strength indicator
+- Email format validation
+- Password match confirmation
+- Required field validation
+
+CHART CONTROLS:
+--------------
+Water Quality Trends Chart:
+- Metric selector: Temperature | pH
+- Range selector: Daily | Weekly | Monthly
+- Period selector: Month (for daily/weekly) | Year (for monthly)
+- Dynamic visibility based on range selection
+
+Reports Section:
+- Hourly: Date selector (YYYY-MM-DD)
+- Daily/Weekly: Month selector (YYYY-MM)
+- Monthly: Year selector (YYYY)
+
+================================================================================
+10. API ENDPOINTS (CURRENT JS → FUTURE PHP)
+================================================================================
+
+AUTHENTICATION ENDPOINTS:
+-------------------------
+Current JS:
+  - Firebase Auth: signInWithEmailAndPassword()
+  - Firebase Auth: createUserWithEmailAndPassword()
+  - Firebase Auth: signOut()
+  - Firestore: Read users/{uid}
+
+Future PHP:
+  POST /api/auth/login
+    Request: { email, password }
+    Response: { success, user, token, role }
+  
+  POST /api/auth/signup
+    Request: { firstName, lastName, email, password, confirmPassword }
+    Response: { success, user, token }
+  
+  POST /api/auth/logout
+    Request: { token }
+    Response: { success }
+  
+  GET /api/auth/verify
+    Request: { token }
+    Response: { success, user, role }
+
+SENSOR DATA ENDPOINTS:
+----------------------
+Current JS:
+  - Firestore: Read users/{uid}/sensors/temperature
+  - Firestore: Read users/{uid}/sensors/ph
+  - Firestore: Read users/{uid}/sensors/feeder
+  - onSnapshot() for real-time updates
+
+Future PHP:
+  GET /api/sensors/{uid}/temperature
+    Response: { value, updatedAt }
+  
+  GET /api/sensors/{uid}/ph
+    Response: { value, updatedAt }
+  
+  GET /api/sensors/{uid}/feeder
+    Response: { value, updatedAt }
+  
+  WebSocket: /ws/sensors/{uid} (for real-time updates)
+
+REPORT ENDPOINTS:
+-----------------
+Current JS:
+  - Firestore: Read users/{uid}/hourlyRecords/{date}/hours
+  - Firestore: Read users/{uid}/dailyReports
+  - Firestore: Read users/{uid}/weeklyReports
+  - Firestore: Read users/{uid}/monthlyReports
+  - Firestore: Write reports (generation)
+
+Future PHP:
+  GET /api/reports/{uid}/hourly?date=YYYY-MM-DD
+    Response: { reports: [...], charts: {...} }
+  
+  GET /api/reports/{uid}/daily?month=YYYY-MM
+    Response: { reports: [...], charts: {...} }
+  
+  GET /api/reports/{uid}/weekly?month=YYYY-MM
+    Response: { reports: [...], charts: {...} }
+  
+  GET /api/reports/{uid}/monthly?year=YYYY
+    Response: { reports: [...], charts: {...} }
+  
+  POST /api/reports/{uid}/generate/daily
+    Request: { date }
+    Response: { success, report }
+  
+  POST /api/reports/{uid}/generate/weekly
+    Request: { week }
+    Response: { success, report }
+  
+  POST /api/reports/{uid}/generate/monthly
+    Request: { year, month }
+    Response: { success, report }
+
+FEEDING SCHEDULE ENDPOINTS:
+---------------------------
+Current JS:
+  - Firestore: Read users/{uid}/feedingSchedules
+  - Firestore: Write users/{uid}/feedingSchedules/{id}
+
+Future PHP:
+  GET /api/feeding/{uid}/schedules
+    Response: { schedules: [...] }
+  
+  POST /api/feeding/{uid}/schedules
+    Request: { title, scheduledTime, feedAmount, notes }
+    Response: { success, schedule }
+  
+  PUT /api/feeding/{uid}/schedules/{id}
+    Request: { ...schedule fields }
+    Response: { success, schedule }
+  
+  DELETE /api/feeding/{uid}/schedules/{id}
+    Response: { success }
+
+DEVICE CONTROL ENDPOINTS:
+-------------------------
+Current JS:
+  - RTDB: Write devices/{deviceId}/commands/feeder
+  - RTDB: Write devices/{deviceId}/status/feeder
+  - RTDB: Read devices/{deviceId}/status (onValue listener)
+
+Future PHP:
+  POST /api/devices/{deviceId}/commands/feeder
+    Request: { state: "on" | "off" }
+    Response: { success }
+  
+  GET /api/devices/{deviceId}/status
+    Response: { feeder: "online" | "offline", lastSeen }
+  
+  WebSocket: /ws/devices/{deviceId}/status (for real-time updates)
+
+EXPORT ENDPOINTS:
+----------------
+Current JS:
+  - Client-side export (CSV, Word, PDF generation in browser)
+
+Future PHP:
+  GET /api/reports/{uid}/export/daily?format=csv&month=YYYY-MM
+    Response: CSV file download
+  
+  GET /api/reports/{uid}/export/daily?format=pdf&month=YYYY-MM
+    Response: PDF file download
+  
+  GET /api/reports/{uid}/export/daily?format=word&month=YYYY-MM
+    Response: Word file download
+
+================================================================================
+11. SECURITY CONSIDERATIONS
+================================================================================
+
+CURRENT JS IMPLEMENTATION:
+--------------------------
+- Firebase Auth handles password hashing (server-side)
+- Session storage for authentication state
+- Role-based access control (verifyRoleOrRedirect)
+- Firestore security rules (server-side enforcement)
+- No sensitive data in client-side code
+- API keys exposed in firebase-init.js (acceptable for Firebase)
+
+PHP BACKEND SECURITY REQUIREMENTS:
+----------------------------------
+1. Password Hashing:
+   - Use password_hash() with PASSWORD_BCRYPT or PASSWORD_ARGON2ID
+   - Never store plaintext passwords
+   - Verify with password_verify()
+
+2. Session Management:
+   - Use PHP sessions with secure cookies
+   - Session regeneration on login
+   - CSRF tokens for state-changing operations
+   - Session timeout (e.g., 30 minutes inactivity)
+
+3. Authentication:
+   - JWT tokens or session-based auth
+   - Token expiration and refresh
+   - Secure token storage (httpOnly cookies)
+
+4. Authorization:
+   - Role-based access control (RBAC)
+   - Middleware for route protection
+   - Verify user permissions before data access
+
+5. Input Validation:
+   - Sanitize all user inputs
+   - Validate email formats
+   - Validate date formats
+   - SQL injection prevention (prepared statements)
+   - XSS prevention (output escaping)
+
+6. API Security:
+   - Rate limiting
+   - CORS configuration
+   - HTTPS only
+   - API key authentication for device endpoints
+
+7. Database Security:
+   - Prepared statements (PDO)
+   - No direct SQL string concatenation
+   - Parameterized queries
+   - Database user with minimal privileges
+
+8. File Upload Security:
+   - File type validation
+   - File size limits
+   - Virus scanning
+   - Secure file storage outside web root
+
+================================================================================
+12. MIGRATION CHECKLIST
+================================================================================
+
+DATABASE MIGRATION:
+-------------------
+□ Design MySQL/PostgreSQL schema equivalent to Firestore structure
+□ Create users table (firstName, lastName, email, role, isActive, createdAt)
+□ Create sensors table (uid, type, value, updatedAt)
+□ Create hourly_records table (uid, date, hour, temperatureSum, temperatureCount, ...)
+□ Create daily_reports table (uid, date, avgTemperature, avgPh, totalFeedKg, ...)
+□ Create weekly_reports table (uid, week, avgTemperature, avgPh, totalFeedKg, ...)
+□ Create monthly_reports table (uid, month, avgTemperature, avgPh, totalFeedKg, ...)
+□ Create feeding_schedules table (uid, title, scheduledTime, feedAmount, ...)
+□ Create mortality_logs table (uid, timestamp, count, cause, notes)
+□ Create devices table (uid, deviceId, enabled, type, status)
+□ Create RTDB equivalent (Redis or separate MySQL table for device commands)
+
+AUTHENTICATION MIGRATION:
+-------------------------
+□ Implement PHP session management
+□ Create login endpoint (POST /api/auth/login)
+□ Create signup endpoint (POST /api/auth/signup)
+□ Create logout endpoint (POST /api/auth/logout)
+□ Create verify endpoint (GET /api/auth/verify)
+□ Implement password hashing (password_hash/password_verify)
+□ Implement role-based access control middleware
+□ Migrate user data from Firestore to SQL database
+
+SENSOR DATA MIGRATION:
+----------------------
+□ Create sensor reading endpoints
+□ Implement real-time updates (WebSocket or Server-Sent Events)
+□ Migrate existing sensor data from Firestore
+□ Implement feeder status mirroring to RTDB equivalent
+
+REPORT GENERATION MIGRATION:
+----------------------------
+□ Create hourly sampling cron job (runs every 5 minutes)
+□ Create daily report generation cron job (runs once per day)
+□ Create weekly report generation cron job (runs once per week)
+□ Create monthly report generation cron job (runs once per month)
+□ Implement report aggregation logic (PHP equivalent)
+□ Create report loading endpoints (GET /api/reports/{uid}/...)
+□ Implement report filtering (date/month/year)
+□ Migrate existing reports from Firestore
+
+CHART DATA MIGRATION:
+---------------------
+□ Create chart data endpoints
+□ Implement data aggregation for charts
+□ Maintain seed document logic for empty states
+□ Implement chart data filtering
+
+DEVICE CONTROL MIGRATION:
+--------------------------
+□ Create device command endpoints (POST /api/devices/{id}/commands)
+□ Create device status endpoints (GET /api/devices/{id}/status)
+□ Implement RTDB equivalent (Redis or MySQL table)
+□ Create WebSocket endpoint for real-time device status
+□ Migrate device control logic
+
+EXPORT FUNCTIONALITY:
+---------------------
+□ Create CSV export endpoint
+□ Create PDF export endpoint (using TCPDF or FPDF)
+□ Create Word export endpoint (using PhpOffice/PhpWord)
+□ Implement month/year filtering for exports
+
+UI MIGRATION:
+-------------
+□ Convert HTML to PHP templates
+□ Replace Firebase calls with AJAX/fetch to PHP endpoints
+□ Implement WebSocket client for real-time updates
+□ Maintain existing UI components and styling
+□ Update form submissions to POST to PHP endpoints
+
+TESTING:
+--------
+□ Test authentication flow
+□ Test report generation accuracy
+□ Test real-time updates
+□ Test device control
+□ Test export functionality
+□ Test role-based access control
+□ Performance testing (database queries)
+□ Security testing (SQL injection, XSS, CSRF)
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+

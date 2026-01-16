@@ -1,0 +1,1112 @@
+/* Admin Dashboard Two-Column Layout Styles */
+/* Separate CSS file for admin-dashboard.html */
+
+body.admin-dashboard-body {
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+}
+
+/* Two-Column Layout Container */
+.admin-dashboard-layout {
+    display: flex;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #EEECF1 0%, #ADC3D1 100%);
+}
+
+/* Left Sidebar (Fixed) */
+.admin-sidebar {
+    width: 280px;
+    background: white;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+    position: fixed;
+    height: 100vh;
+    overflow-y: auto;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Sidebar Header/Branding */
+.admin-sidebar-header {
+    padding: 2rem 1.5rem;
+    border-bottom: 1px solid #e1e5e9;
+    background: linear-gradient(135deg, #759CC9, #8FB1CC);
+}
+
+.admin-sidebar-header .brand {
+    display: flex;
+    align-items: center;
+    color: white;
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.admin-sidebar-header .brand .app-logo {
+    height: 36px;
+    width: auto;
+    margin-right: 10px;
+    vertical-align: middle;
+    object-fit: contain;
+}
+
+/* User Profile Section */
+.admin-sidebar-user {
+    padding: 1.5rem;
+    border-bottom: 1px solid #e1e5e9;
+    background: #EEECF1;
+}
+
+.admin-sidebar-user .admin-user-profile {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.admin-sidebar-user .admin-user-profile i {
+    font-size: 2.5rem;
+    color: #759CC9;
+}
+
+.admin-sidebar-user .admin-user-profile > div {
+    flex: 1;
+    min-width: 0;
+}
+
+.admin-sidebar-user .admin-user-profile > div > div:first-child {
+    font-weight: 600;
+    color: #333;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.admin-sidebar-user .admin-user-profile > div > div:last-child {
+    font-size: 0.85rem;
+    color: #666;
+    margin-top: 0.25rem;
+}
+
+/* Navigation Menu */
+.admin-sidebar-nav {
+    flex: 1;
+    padding: 1.5rem 0;
+}
+
+.admin-sidebar-nav .admin-nav-link,
+.admin-sidebar-nav .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    color: #333;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    border-left: 4px solid transparent;
+}
+
+.admin-sidebar-nav .admin-nav-link:hover,
+.admin-sidebar-nav .nav-link:hover {
+    background: rgba(143, 177, 204, 0.15);
+    color: #8FB1CC;
+    border-left-color: #8FB1CC;
+    transform: translateX(2px);
+    transition: all 0.2s ease;
+}
+
+.admin-sidebar-nav .admin-nav-link.active,
+.admin-sidebar-nav .nav-link.active {
+    background: linear-gradient(90deg, rgba(143, 177, 204, 0.2), transparent);
+    color: #759CC9;
+    border-left-color: #8FB1CC;
+    font-weight: 600;
+}
+
+.admin-sidebar-nav .admin-nav-link i,
+.admin-sidebar-nav .nav-link i {
+    font-size: 1.2rem;
+    width: 24px;
+    text-align: center;
+}
+
+.admin-sidebar-nav .admin-nav-link span,
+.admin-sidebar-nav .nav-link span {
+    font-weight: 500;
+}
+
+/* Sidebar Footer */
+.admin-sidebar-footer {
+    padding: 1.5rem;
+    border-top: 1px solid #e1e5e9;
+    background: #EEECF1;
+}
+
+.admin-sidebar-footer .admin-btn-logout,
+.admin-sidebar-footer .btn-logout {
+    width: 100%;
+    background: #949494;
+    color: white;
+    border: none;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.admin-sidebar-footer .admin-btn-logout:hover,
+.admin-sidebar-footer .btn-logout:hover {
+    background: #AEAEAE;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(148, 148, 148, 0.3);
+}
+
+.admin-sidebar-footer .admin-btn-logout:active,
+.admin-sidebar-footer .btn-logout:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 4px rgba(148, 148, 148, 0.2);
+}
+
+/* Main Content Area */
+.main-content.admin-content {
+    flex: 1;
+    margin-left: 280px;
+    min-height: 100vh;
+    padding: 0;
+}
+
+.main-content.admin-content .container {
+    max-width: 100%;
+    padding: 0 2.5rem 2rem;
+}
+
+/* Dashboard Section Styles */
+.dashboard-header.admin-header {
+    margin-bottom: 2.5rem;
+    margin-top: 0;
+    padding: 2.5rem 2rem;
+}
+
+.dashboard-header.admin-header.page-header {
+    padding: 2rem;
+}
+
+.dashboard-title.admin-title {
+    margin-bottom: 0.75rem;
+}
+
+.dashboard-subtitle.admin-subtitle {
+    font-size: 1.15rem;
+}
+
+.page-title.admin-page-title {
+    font-size: 2.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.page-subtitle.admin-subtitle {
+    color: #666;
+    font-size: 1.1rem;
+}
+
+/* Section Padding Adjustments */
+.overview-section,
+.users-section,
+.analytics-section,
+.system-section {
+    padding: 0;
+}
+
+.overview-section.active,
+.users-section.active,
+.analytics-section.active,
+.system-section.active {
+    display: block;
+}
+
+/* Excel-like Minimal Styling - Stats Grid */
+.stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Stat Cards - Clean, Minimal, Excel-like */
+.stat-card {
+    background: white;
+    border: 1px solid #d0d0d0;
+    padding: 0.75rem;
+    border-radius: 0;
+    box-shadow: none;
+    transition: border-color 0.1s ease;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    align-items: center;
+    text-align: left;
+}
+
+.stat-card:hover {
+    border-color: #b0b0b0;
+    background: #f9f9f9;
+}
+
+.stat-card .stat-icon {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0;
+    margin-right: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f5f5f5;
+    border: 1px solid #d0d0d0;
+}
+
+.stat-card .stat-icon i {
+    font-size: 1rem;
+    color: #666;
+}
+
+.stat-card .stat-content {
+    flex: 1;
+}
+
+.stat-card .stat-content h3 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #666;
+    margin-bottom: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.stat-card .stat-content .stat-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.25rem;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.stat-card .stat-content .stat-change {
+    font-size: 0.7rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0;
+    display: inline-block;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.stat-card .stat-content .stat-change.positive {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #c8e6c9;
+}
+
+.stat-card .stat-content .stat-change.warning {
+    background: #fff3e0;
+    color: #e65100;
+    border: 1px solid #ffe0b2;
+}
+
+/* Activity Section - Excel-like Table Style */
+.activity-section {
+    background: white;
+    padding: 0;
+    border: 1px solid #d0d0d0;
+    border-radius: 0;
+    box-shadow: none;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    margin-top: 1rem;
+}
+
+.activity-section h3 {
+    background: #e8e8e8;
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 1px solid #d0d0d0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.activity-section .activity-list {
+    padding: 0;
+}
+
+.activity-section .activity-item {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: background-color 0.1s ease;
+    background: white;
+}
+
+.activity-section .activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-section .activity-item:hover {
+    background: #f9f9f9;
+}
+
+.activity-section .activity-item:nth-child(even) {
+    background: #f9f9f9;
+}
+
+.activity-section .activity-item:nth-child(even):hover {
+    background: #f0f0f0;
+}
+
+.activity-section .activity-item i {
+    font-size: 0.875rem;
+    color: #666;
+    width: 1rem;
+    text-align: center;
+}
+
+.activity-section .activity-item .activity-content {
+    flex: 1;
+}
+
+.activity-section .activity-item .activity-content p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #333;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.activity-section .activity-item .activity-content .activity-time {
+    font-size: 0.75rem;
+    color: #999;
+    display: block;
+    margin-top: 0.125rem;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Users Table - Excel-like Styling */
+.users-table-container {
+    background: white;
+    overflow: auto;
+    border: 1px solid #d0d0d0;
+    margin-top: 1rem;
+}
+
+.users-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 0.875rem;
+    table-layout: auto;
+}
+
+/* Excel-like Header Row */
+.users-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+.users-table th {
+    background: #e8e8e8;
+    padding: 0.375rem 0.5rem;
+    text-align: left;
+    font-weight: 600;
+    color: #333;
+    border: 1px solid #d0d0d0;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    border-bottom: 2px solid #b0b0b0;
+    border-right: 1px solid #d0d0d0;
+}
+
+.users-table th:first-child {
+    border-left: 1px solid #d0d0d0;
+}
+
+/* Excel-like Table Cells */
+.users-table td {
+    padding: 0.375rem 0.5rem;
+    border: 1px solid #d0d0d0;
+    color: #333;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 0.875rem;
+    background: white;
+    vertical-align: middle;
+}
+
+/* Zebra Striping - Alternating Row Colors */
+.users-table tbody tr:nth-child(even) {
+    background: #f9f9f9;
+}
+
+.users-table tbody tr:nth-child(odd) {
+    background: white;
+}
+
+.users-table tbody tr {
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+
+/* Row Hover - Subtle Highlight */
+.users-table tbody tr:hover {
+    background: rgba(143, 177, 204, 0.15) !important;
+    border: none;
+}
+
+.users-table tbody tr:hover td {
+    background: rgba(143, 177, 204, 0.15);
+}
+
+/* Selected Row - Subtle Highlight */
+.users-table tbody tr.selected {
+    background: rgba(117, 156, 201, 0.2) !important;
+    border: none;
+}
+
+.users-table tbody tr.selected td {
+    background: rgba(117, 156, 201, 0.2);
+    border-color: #8FB1CC;
+}
+
+/* Status Badge - Excel-like Minimal */
+.users-table .status-badge {
+    padding: 0.125rem 0.375rem;
+    border-radius: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid #d0d0d0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.users-table .status-badge.active {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border-color: #c8e6c9;
+}
+
+.users-table .status-badge.inactive {
+    background: #ffebee;
+    color: #c62828;
+    border-color: #ef9a9a;
+}
+
+/* Table Action Buttons - Excel-like Minimal */
+.users-table .btn-edit,
+.users-table .btn-delete {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #d0d0d0;
+    background: white;
+    color: #333;
+    border-radius: 0;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+    font-weight: 400;
+    font-size: 0.75rem;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    margin-right: 0.25rem;
+}
+
+.users-table .btn-edit:hover {
+    background: #e8e8e8;
+    border-color: #b0b0b0;
+    color: #333;
+}
+
+.users-table .btn-delete {
+    background: #ffebee;
+    border-color: #ef9a9a;
+    color: #c62828;
+}
+
+.users-table .btn-delete:hover {
+    background: #ef9a9a;
+    border-color: #e57373;
+    color: #b71c1c;
+}
+
+/* Search Box - Excel-like Minimal Styling */
+.users-controls {
+    margin-bottom: 0.5rem;
+}
+
+.users-controls .search-box {
+    position: relative;
+    margin-bottom: 0.5rem;
+}
+
+.users-controls .search-box i {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #666;
+    font-size: 0.8rem;
+}
+
+.users-controls .search-box input {
+    width: 100%;
+    padding: 0.375rem 0.5rem 0.375rem 1.75rem;
+    border: 1px solid #d0d0d0;
+    border-radius: 0;
+    font-size: 0.875rem;
+    transition: border-color 0.1s ease;
+    background: white;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.users-controls .search-box input:focus {
+    outline: none;
+    border-color: #759CC9;
+    background: white;
+    box-shadow: none;
+}
+
+.users-controls .search-box input::placeholder {
+    color: #999;
+}
+
+/* Add User Button - Green Background with 50% Opacity */
+.users-controls .btn-primary {
+    background-color: rgba(72, 161, 77, 0.5);
+    color: white;
+    border: none;
+    border-radius: 0;
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: none;
+}
+
+.users-controls .btn-primary:hover {
+    background-color: rgba(72, 161, 77, 0.5);
+    border: none;
+    color: white;
+    transform: none;
+    box-shadow: none;
+}
+
+.users-controls .btn-primary:active {
+    background-color: rgba(72, 161, 77, 0.6);
+    border: none;
+}
+
+.users-controls .btn-primary i {
+    color: white;
+    font-size: 0.875rem;
+}
+
+.users-controls .btn-primary:hover i {
+    color: white;
+}
+
+/* System Cards - Excel-like Minimal Styling */
+.system-card {
+    background: white;
+    border: 1px solid #d0d0d0;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    transition: border-color 0.1s ease;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.system-card:hover {
+    border-color: #b0b0b0;
+    background: #f9f9f9;
+}
+
+.system-card h3 {
+    background: #e8e8e8;
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 1px solid #d0d0d0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Status List - Excel-like Table Style */
+.system-card .server-list,
+.system-card .settings-list {
+    padding: 0;
+    margin: 0;
+}
+
+.system-card .server-item,
+.system-card .setting-item {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+    transition: background-color 0.1s ease;
+}
+
+.system-card .server-item:last-child,
+.system-card .setting-item:last-child {
+    border-bottom: none;
+}
+
+.system-card .server-item:hover,
+.system-card .setting-item:hover {
+    background: #f9f9f9;
+}
+
+.system-card .server-item:nth-child(even),
+.system-card .setting-item:nth-child(even) {
+    background: #f9f9f9;
+}
+
+.system-card .server-item:nth-child(even):hover,
+.system-card .setting-item:nth-child(even):hover {
+    background: #f0f0f0;
+}
+
+.system-card .server-name,
+.system-card .setting-label {
+    font-size: 0.875rem;
+    color: #333;
+    font-weight: 400;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.system-card .server-status,
+.system-card .setting-value {
+    font-size: 0.875rem;
+    font-weight: 600;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.system-card .server-status.online {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #c8e6c9;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0;
+}
+
+.system-card .server-status.offline {
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef9a9a;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0;
+}
+
+.system-card .setting-value input,
+.system-card .setting-value select {
+    border: 1px solid #d0d0d0;
+    border-radius: 0;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background: white;
+}
+
+.system-card .setting-value input:focus,
+.system-card .setting-value select:focus {
+    outline: none;
+    border-color: #759CC9;
+    box-shadow: none;
+    background: white;
+}
+
+/* Action Buttons - Excel-like Minimal */
+.system-card .maintenance-actions {
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.system-card .maintenance-actions button {
+    padding: 0.375rem 0.75rem;
+    border: 1px solid #d0d0d0;
+    background: white;
+    color: #333;
+    border-radius: 0;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+    font-weight: 400;
+    font-size: 0.875rem;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.system-card .maintenance-actions button:hover {
+    background: #e8e8e8;
+    border-color: #b0b0b0;
+    color: #333;
+}
+
+.system-card .maintenance-actions button:active {
+    background: #d0d0d0;
+}
+
+.system-card .maintenance-actions .btn-warning {
+    background: #fff3e0;
+    border-color: #ffe0b2;
+    color: #e65100;
+}
+
+.system-card .maintenance-actions .btn-warning:hover {
+    background: #ffe0b2;
+    border-color: #ffcc80;
+    color: #bf360c;
+}
+
+/* Log Lists - Excel-like Table Style */
+.system-card-logs {
+    min-height: 200px;
+}
+
+.system-card .log-list {
+    padding: 0;
+    margin: 0;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.system-card .log-item {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    background: white;
+    transition: background-color 0.1s ease;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.system-card .log-item:last-child {
+    border-bottom: none;
+}
+
+.system-card .log-item:hover {
+    background: #f9f9f9;
+}
+
+.system-card .log-item:nth-child(even) {
+    background: #f9f9f9;
+}
+
+.system-card .log-item:nth-child(even):hover {
+    background: #f0f0f0;
+}
+
+.system-card .log-time {
+    font-size: 0.75rem;
+    color: #999;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.system-card .log-message {
+    font-size: 0.875rem;
+    color: #333;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.system-card .log-item.error .log-message {
+    color: #c62828;
+    font-weight: 600;
+}
+
+.system-card .log-item.warning .log-message {
+    color: #e65100;
+}
+
+.system-card .log-item.info .log-message {
+    color: #1976d2;
+}
+
+/* System Subsection Containers */
+.system-subsection {
+    margin-bottom: 2rem;
+}
+
+.system-subsection:first-of-type {
+    margin-top: 0;
+}
+
+/* Subsection Headers - Excel-like Minimal Styling */
+.subsection-header {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #333;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0.75rem 0.5rem;
+    margin: 1.5rem 0 0.75rem 0;
+    background: #f5f5f5;
+    border-bottom: 1px solid #d0d0d0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.subsection-header:first-child {
+    margin-top: 0;
+}
+
+/* System Grid - Excel-like Minimal */
+.system-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 0.5rem;
+}
+
+/* Analytics Grid - Excel-like Minimal */
+.analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 0.5rem;
+}
+
+/* Analytics Cards - Excel-like Minimal Styling */
+.analytics-card {
+    background: white;
+    border: 1px solid #d0d0d0;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    transition: border-color 0.1s ease;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.analytics-card:hover {
+    border-color: #b0b0b0;
+    background: #f9f9f9;
+}
+
+.analytics-card h3 {
+    background: #e8e8e8;
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #333;
+    border-bottom: 1px solid #d0d0d0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.analytics-card > p {
+    padding: 0.75rem;
+    margin: 0;
+    font-size: 0.875rem;
+    color: #666;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Engagement Stats - Excel-like Table Style */
+.engagement-stats,
+.health-metrics {
+    padding: 0;
+    margin: 0;
+}
+
+.engagement-item,
+.health-item {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+    transition: background-color 0.1s ease;
+}
+
+.engagement-item:last-child,
+.health-item:last-child {
+    border-bottom: none;
+}
+
+.engagement-item:hover,
+.health-item:hover {
+    background: #f9f9f9;
+}
+
+.engagement-item:nth-child(even),
+.health-item:nth-child(even) {
+    background: #f9f9f9;
+}
+
+.engagement-item:nth-child(even):hover,
+.health-item:nth-child(even):hover {
+    background: #f0f0f0;
+}
+
+.engagement-item .label,
+.health-item .label {
+    font-size: 0.875rem;
+    color: #333;
+    font-weight: 400;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.engagement-item .value,
+.health-item .value {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #333;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.health-item .value.good {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #c8e6c9;
+    padding: 0.125rem 0.375rem;
+    border-radius: 0;
+}
+
+/* Page Title - Excel-like Header */
+.page-title.admin-page-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem 0.5rem;
+    background: #f5f5f5;
+    border-bottom: 1px solid #d0d0d0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Dashboard Header - Excel-like Minimal */
+.dashboard-header.admin-header {
+    margin-bottom: 0.75rem;
+    margin-top: 0;
+    padding: 0.75rem 0.5rem;
+    background: #f5f5f5;
+    border-bottom: 1px solid #d0d0d0;
+}
+
+.dashboard-title.admin-title {
+    margin-bottom: 0.25rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #333;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.dashboard-subtitle.admin-subtitle {
+    font-size: 0.875rem;
+    color: #666;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .admin-dashboard-layout {
+        flex-direction: column;
+    }
+    
+    .admin-sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .main-content.admin-content {
+        margin-left: 0 !important;
+    }
+    
+    .admin-sidebar-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 1rem;
+    }
+    
+    .admin-sidebar-nav .admin-nav-link,
+    .admin-sidebar-nav .nav-link {
+        flex: 1;
+        min-width: 120px;
+        padding: 0.75rem 1rem;
+        border-left: none;
+        border-bottom: 3px solid transparent;
+        justify-content: center;
+    }
+    
+    .admin-sidebar-nav .admin-nav-link.active,
+    .admin-sidebar-nav .nav-link.active {
+        border-left: none;
+        border-bottom-color: #759CC9;
+    }
+    
+    .admin-sidebar-nav .admin-nav-link:hover,
+    .admin-sidebar-nav .nav-link:hover {
+        border-left: none;
+        border-bottom-color: #8FB1CC;
+    }
+}
+
+@media (max-width: 480px) {
+    .admin-sidebar {
+        width: 100%;
+    }
+    
+    .admin-sidebar-header {
+        padding: 1.5rem 1rem;
+    }
+    
+    .admin-sidebar-user {
+        padding: 1rem;
+    }
+    
+    .admin-sidebar-nav {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .admin-sidebar-nav .admin-nav-link,
+    .admin-sidebar-nav .nav-link {
+        min-width: 100%;
+        border-left: 4px solid transparent;
+        border-bottom: none;
+        justify-content: flex-start;
+    }
+    
+    .admin-sidebar-nav .admin-nav-link.active,
+    .admin-sidebar-nav .nav-link.active {
+        border-left-color: #8FB1CC;
+        border-bottom: none;
+    }
+    
+    .admin-sidebar-nav .admin-nav-link:hover,
+    .admin-sidebar-nav .nav-link:hover {
+        border-left-color: #8FB1CC;
+        border-bottom: none;
+    }
+    
+    .main-content.admin-content .container {
+        padding: 1.5rem 1rem !important;
+    }
+}
+

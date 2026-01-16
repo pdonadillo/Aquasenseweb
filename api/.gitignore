@@ -1,0 +1,10 @@
+# Firebase service account key (never commit)
+_private/firebase-service-account.json
+
+# Composer
+vendor/
+composer.lock
+
+# Environment files
+.env
+.env.local

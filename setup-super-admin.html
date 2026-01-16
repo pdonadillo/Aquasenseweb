@@ -1,0 +1,439 @@
+<!-- this is setup-super-admin.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Super Admin - AquaSense</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #2c5aa0;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border: 1px solid #ffeaa7;
+            font-size: 14px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: none;
+            border-color: #4a90e2;
+        }
+        button {
+            background: linear-gradient(135deg, #4a90e2, #357abd);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            width: 100%;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(74, 144, 226, 0.4);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border: 1px solid #f5c6cb;
+        }
+        .loading {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border: 1px solid #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Setup Super Admin</h1>
+        <div class="warning">
+            <strong>⚠️ DEVELOPER ACCESS ONLY ⚠️</strong><br>
+            This page will create the super admin user in Firebase. Use this only once to set up the initial super admin.<br>
+            <strong>Security Notice:</strong> This page should only be accessible to developers. Remove or secure this file after initial setup.
+        </div>
+        
+        <form id="setupForm">
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" placeholder="Enter super admin email" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" placeholder="Enter secure password (min 6 characters)" required>
+            </div>
+            <div class="form-group">
+                <label for="firstName">First Name:</label>
+                <input type="text" id="firstName" placeholder="Enter first name" required>
+            </div>
+            <div class="form-group">
+                <label for="lastName">Last Name:</label>
+                <input type="text" id="lastName" placeholder="Enter last name" required>
+            </div>
+            <button type="submit" id="submitBtn">Create Super Admin</button>
+        </form>
+        
+        <div id="message"></div>
+        
+
+        <!-- Super Admin Deletion Section -->
+        <div style="margin-top: 40px; padding-top: 30px; border-top: 2px solid #eee;">
+            <h2 style="color: #dc3545; text-align: center; margin-bottom: 20px;">⚠️ Delete Super Admin</h2>
+            <div class="warning" style="background: #f8d7da; color: #721c24; border-color: #f5c6cb;">
+                <strong>⚠️ DANGER ZONE ⚠️</strong><br>
+                This section allows deletion of super admin accounts. Use with extreme caution!<br>
+                <strong>Warning:</strong> Deleting the last super admin will lock you out of the system permanently.
+            </div>
+            
+            <form id="deleteForm">
+                <div class="form-group">
+                    <label for="deleteEmail">Super Admin Email to Delete:</label>
+                    <input type="email" id="deleteEmail" placeholder="Enter super admin email to delete" required>
+                </div>
+                <div class="form-group">
+                    <label for="confirmDelete">Type "DELETE" to confirm:</label>
+                    <input type="text" id="confirmDelete" placeholder="Type DELETE to confirm deletion" required>
+                </div>
+                <button type="submit" id="deleteBtn" style="background: linear-gradient(135deg, #dc3545, #c82333);">Delete Super Admin</button>
+            </form>
+            
+            <div id="deleteMessage"></div>
+        </div>
+    </div>
+
+    <script>
+        // Firebase configuration - Replace with your actual config
+        const firebaseConfig = {
+            apiKey: 'AIzaSyBXh2XVeKkecjy0tGisPzgNyzXIOdFxK6U',
+            authDomain: 'aquasense-8fef1.firebaseapp.com',
+            databaseURL: 'https://aquasense-8fef1-default-rtdb.firebaseio.com',
+            projectId: 'aquasense-8fef1',
+            storageBucket: 'aquasense-8fef1.firebasestorage.app',
+            messagingSenderId: '1052942345206',
+            appId: '1:1052942345206:web:98d03f840be6b8525f9dd7',
+            measurementId: 'G-X0KN9WE0BM'
+        };
+
+        // Initialize Firebase
+        let app, db, auth;
+        
+        async function initializeFirebase() {
+            try {
+                // Import Firebase modules dynamically
+                const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js');
+                const { getFirestore } = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js');
+                const { getAuth } = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js');
+                const { createUserWithEmailAndPassword } = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js');
+                const { doc, setDoc, collection, getDocs, query, where, deleteDoc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js');
+                
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // Make functions available globally
+                window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
+                window.doc = doc;
+                window.setDoc = setDoc;
+                window.collection = collection;
+                window.getDocs = getDocs;
+                window.query = query;
+                window.where = where;
+                window.deleteDoc = deleteDoc;
+                window.getDoc = getDoc;
+                
+                return true;
+            } catch (error) {
+                console.error('Error initializing Firebase:', error);
+                showMessage('Error initializing Firebase. Please check your internet connection.', 'error');
+                return false;
+            }
+        }
+
+        function showMessage(message, type = 'info') {
+            const messageDiv = document.getElementById('message');
+            messageDiv.innerHTML = `<div class="${type}">${message}</div>`;
+        }
+
+        function setButtonLoading(loading) {
+            const submitBtn = document.getElementById('submitBtn');
+            if (loading) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Creating Super Admin...';
+            } else {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Super Admin';
+            }
+        }
+
+        function setDeleteButtonLoading(loading) {
+            const deleteBtn = document.getElementById('deleteBtn');
+            if (loading) {
+                deleteBtn.disabled = true;
+                deleteBtn.textContent = 'Deleting Super Admin...';
+            } else {
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = 'Delete Super Admin';
+            }
+        }
+
+        function showDeleteMessage(message, type = 'info') {
+            const messageDiv = document.getElementById('deleteMessage');
+            messageDiv.innerHTML = `<div class="${type}">${message}</div>`;
+        }
+
+        async function createSuperAdmin(email, password, firstName, lastName) {
+            try {
+                // Check if user already exists in Firestore
+                const existingUserQuery = query(collection(db, 'users'), where('email', '==', email));
+                const existingUserSnapshot = await getDocs(existingUserQuery);
+                
+                if (!existingUserSnapshot.empty) {
+                    showMessage('A user with this email already exists in the system.', 'error');
+                    return false;
+                }
+                
+                // Create user in Firebase Auth
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                const firebaseUser = userCredential.user;
+                console.log('Firebase Auth user created:', firebaseUser.uid);
+                
+                // Store additional user data in Firestore
+                const userRef = doc(db, 'users', firebaseUser.uid);
+                await setDoc(userRef, {
+                    firstName,
+                    lastName,
+                    email,
+                    role: 'superadmin',
+                    createdAt: Date.now(),
+                    firebaseUid: firebaseUser.uid,
+                    isActive: true
+                });
+                
+                showMessage(
+                    'Super admin created successfully!<br><br>' +
+                    '<strong>Login Credentials:</strong><br>' +
+                    'Email: ' + email + '<br>' +
+                    'Password: [as entered]<br><br>' +
+                    '<strong>Important:</strong> Save these credentials securely. You can now login at the main page with these credentials.',
+                    'success'
+                );
+                
+                // Clear form
+                document.getElementById('setupForm').reset();
+                return true;
+                
+            } catch (error) {
+                console.error('Error creating super admin:', error);
+                let errorMessage = 'Error creating super admin: ' + error.message;
+                
+                if (error.code === 'auth/email-already-in-use') {
+                    errorMessage = 'This email is already registered in Firebase Auth. Please use a different email or try logging in.';
+                } else if (error.code === 'auth/weak-password') {
+                    errorMessage = 'Password is too weak. Please choose a stronger password (at least 6 characters).';
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMessage = 'Invalid email address. Please enter a valid email.';
+                } else if (error.code === 'auth/operation-not-allowed') {
+                    errorMessage = 'Email/password accounts are not enabled. Please check Firebase configuration.';
+                }
+                
+                showMessage(errorMessage, 'error');
+                return false;
+            }
+        }
+
+        async function deleteSuperAdmin(email) {
+            try {
+                // Find the super admin user by email
+                const userQuery = query(collection(db, 'users'), where('email', '==', email.toLowerCase()));
+                const userSnapshot = await getDocs(userQuery);
+                
+                if (userSnapshot.empty) {
+                    showDeleteMessage('No super admin found with this email address.', 'error');
+                    return false;
+                }
+                
+                const userDoc = userSnapshot.docs[0];
+                const userData = userDoc.data();
+                
+                // Verify this is actually a super admin
+                if (userData.role !== 'superadmin') {
+                    showDeleteMessage('This user is not a super admin. Only super admin accounts can be deleted here.', 'error');
+                    return false;
+                }
+                
+                // Check if this is the last super admin
+                const allSuperAdminsQuery = query(collection(db, 'users'), where('role', '==', 'superadmin'));
+                const allSuperAdminsSnapshot = await getDocs(allSuperAdminsQuery);
+                
+                if (allSuperAdminsSnapshot.size <= 1) {
+                    showDeleteMessage('Cannot delete the last super admin! This would lock you out of the system permanently. Create another super admin first.', 'error');
+                    return false;
+                }
+                
+                // Delete the user document from Firestore
+                await deleteDoc(userDoc.ref);
+                
+                showDeleteMessage(
+                    'Super admin deleted successfully!<br><br>' +
+                    '<strong>Deleted User:</strong><br>' +
+                    'Email: ' + email + '<br>' +
+                    'Name: ' + userData.firstName + ' ' + userData.lastName + '<br><br>' +
+                    '<strong>Note:</strong> The Firebase Auth account still exists. You may need to delete it manually from the Firebase Console.',
+                    'success'
+                );
+                
+                // Clear form
+                document.getElementById('deleteForm').reset();
+                return true;
+                
+            } catch (error) {
+                console.error('Error deleting super admin:', error);
+                showDeleteMessage('Error deleting super admin: ' + error.message, 'error');
+                return false;
+            }
+        }
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Initialize Firebase
+            const firebaseReady = await initializeFirebase();
+            if (!firebaseReady) {
+                return;
+            }
+            
+            // Set up form submission
+            document.getElementById('setupForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const email = document.getElementById('email').value.toLowerCase().trim();
+                const password = document.getElementById('password').value;
+                const firstName = document.getElementById('firstName').value.trim();
+                const lastName = document.getElementById('lastName').value.trim();
+                
+                // Basic validation
+                if (!email || !password || !firstName || !lastName) {
+                    showMessage('Please fill in all fields.', 'error');
+                    return;
+                }
+                
+                if (password.length < 6) {
+                    showMessage('Password must be at least 6 characters long.', 'error');
+                    return;
+                }
+                
+                // Email validation
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(email)) {
+                    showMessage('Please enter a valid email address.', 'error');
+                    return;
+                }
+                
+                setButtonLoading(true);
+                showMessage('Creating super admin account...', 'loading');
+                
+                const success = await createSuperAdmin(email, password, firstName, lastName);
+                
+                setButtonLoading(false);
+            });
+            
+            // Set up delete form submission
+            document.getElementById('deleteForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const email = document.getElementById('deleteEmail').value.toLowerCase().trim();
+                const confirmText = document.getElementById('confirmDelete').value.trim();
+                
+                // Basic validation
+                if (!email || !confirmText) {
+                    showDeleteMessage('Please fill in all fields.', 'error');
+                    return;
+                }
+                
+                if (confirmText !== 'DELETE') {
+                    showDeleteMessage('Please type "DELETE" exactly to confirm the deletion.', 'error');
+                    return;
+                }
+                
+                // Email validation
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(email)) {
+                    showDeleteMessage('Please enter a valid email address.', 'error');
+                    return;
+                }
+                
+                // Final confirmation
+                if (!confirm('⚠️ FINAL WARNING ⚠️\n\nYou are about to delete a super admin account.\n\nThis action cannot be undone!\n\nAre you absolutely sure you want to proceed?')) {
+                    return;
+                }
+                
+                setDeleteButtonLoading(true);
+                showDeleteMessage('Deleting super admin account...', 'loading');
+                
+                const success = await deleteSuperAdmin(email);
+                
+                setDeleteButtonLoading(false);
+            });
+        });
+    </script>
+</body>
+</html>
