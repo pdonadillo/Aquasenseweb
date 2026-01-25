@@ -1,0 +1,38 @@
+{
+  "rules": {
+    "$uid": {
+      ".read": "auth != null && (auth.uid == $uid || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null",
+      ".write": "auth != null && (auth.uid == $uid || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null",
+      "status": {
+        "feeder": {
+          ".read": "auth != null && (auth.uid == $uid || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null",
+          ".write": "auth != null && (auth.uid == $uid || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null"
+        }
+      },
+      "sensors": {
+        ".read": "auth != null && (auth.uid == $uid || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null",
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null"
+      }
+    },
+    "devices": {
+      "$deviceId": {
+        ".read": "auth != null && (auth.uid == $deviceId || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null",
+        ".write": "auth != null && (auth.uid == $deviceId || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null",
+        "status": {
+          ".read": "auth != null && (auth.uid == $deviceId || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null",
+          ".write": "auth != null && (auth.uid == $deviceId || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null",
+          "feeder": {
+            ".read": "auth != null && (auth.uid == $deviceId || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null",
+            ".write": "auth != null && (auth.uid == $deviceId || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null"
+          }
+        },
+        "sensors": {
+          ".read": "auth != null && (auth.uid == $deviceId || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null",
+          ".write": "auth != null && (auth.uid == $deviceId || auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2') || auth == null"
+        }
+      }
+    },
+    ".read": false,
+    ".write": false
+  }
+}

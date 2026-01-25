@@ -8,7 +8,8 @@ service cloud.firestore {
     // ============================================================
     match /users/{uid} {
       // Read: Users can read their own document, SuperAdmins can read all
-      allow read: if isOwner(uid) || isSuperAdmin();
+      // Also allow the specified user (H5hY84Qz85TD9MBPb6UKy3mzLxZ2) to read any user document
+      allow read: if isOwner(uid) || isSuperAdmin() || isSpecifiedUser();
       
       // Create: Users can create their own document during signup
       allow create: if request.auth != null && 
@@ -17,9 +18,11 @@ service cloud.firestore {
                        request.resource.data.role == 'user';
       
       // Update: Users can update their own document (except role), SuperAdmins can update any
+      // Also allow the specified user to update any user document
       allow update: if (isOwner(uid) && 
                        !('role' in request.resource.data.diff(resource.data))) ||
-                      isSuperAdmin();
+                      isSuperAdmin() ||
+                      isSpecifiedUser();
       
       // Delete: Only SuperAdmins can delete user documents
       allow delete: if isSuperAdmin();
@@ -31,68 +34,94 @@ service cloud.firestore {
       // Schedules: needed for feeding schedule execution
       match /schedules/{scheduleId} {
         // Allow read for authenticated owners, admins, or background runtime (unauthenticated)
+        // Also allow the specified user to read/write any schedule
         // Write still requires authentication for security
-        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
-        allow write: if isOwner(uid) || isAdminOrSuperAdmin();
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || isSpecifiedUser();
       }
       
       // FeedingLogs: needed to check if schedule already started
       match /feedingLogs/{logId} {
-        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
-        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
       }
       
       // Sensors: needed for sensor data sync
       match /sensors/{sensorId} {
-        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
-        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        // Special rule for feeder: allow access when type field is "device"
+        // This allows read/write access to feeder document when type == "device"
+        // Works for background runtime (unauthenticated) on index.html
+        // Other sensors (ph, temperature) use standard permissions
+        allow read: if sensorId == 'feeder' && 
+                       ((resource.data.type == 'device') || 
+                        isOwner(uid) || 
+                        isAdminOrSuperAdmin() || 
+                        (request.auth == null) || 
+                        isSpecifiedUser()) ||
+                   (sensorId != 'feeder' && 
+                    (isOwner(uid) || 
+                     isAdminOrSuperAdmin() || 
+                     (request.auth == null) || 
+                     isSpecifiedUser()));
+        
+        allow write: if sensorId == 'feeder' && 
+                        ((request.resource.data.type == 'device') || 
+                         isOwner(uid) || 
+                         isAdminOrSuperAdmin() || 
+                         (request.auth == null) || 
+                         isSpecifiedUser()) ||
+                    (sensorId != 'feeder' && 
+                     (isOwner(uid) || 
+                      isAdminOrSuperAdmin() || 
+                      (request.auth == null) || 
+                      isSpecifiedUser()));
       }
       
       // HourlyRecords: needed for report generation
       match /hourlyRecords/{dateId} {
-        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
-        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
         
         // Nested: hours subcollection
         match /hours/{hourId} {
-          allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
-          allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+          allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
+          allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
         }
       }
       
       // DailyReports: needed for rollups
       match /dailyReports/{reportId} {
-        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
-        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
       }
       
       // WeeklyReports: needed for rollups
       match /weeklyReports/{reportId} {
-        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
-        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
       }
       
       // MonthlyReports: needed for rollups
       match /monthlyReports/{reportId} {
-        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
-        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
       }
       
       // ProductionRecords: needed for production monitoring
       match /productionRecords/{recordId} {
-        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
-        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null) || isSpecifiedUser();
       }
       
       // All other subcollections: require authentication
       match /{subcollection}/{docId} {
-        allow read, write: if isOwner(uid) || isAdminOrSuperAdmin();
+        allow read, write: if isOwner(uid) || isAdminOrSuperAdmin() || isSpecifiedUser();
         
         // ============================================================
         // NESTED SUBCOLLECTIONS (Level 2)
         // ============================================================
         match /{nestedSubcollection}/{nestedDocId} {
-          allow read, write: if isOwner(uid) || isAdminOrSuperAdmin();
+          allow read, write: if isOwner(uid) || isAdminOrSuperAdmin() || isSpecifiedUser();
         }
       }
     }
@@ -102,9 +131,11 @@ service cloud.firestore {
     // ============================================================
     match /activities/{activityId} {
       // All authenticated users can read activities
-      allow read: if request.auth != null;
+      // Also allow the specified user to read/write activities
+      allow read: if request.auth != null || isSpecifiedUser();
       // Only admins and superadmins can write activities
-      allow write: if isAdminOrSuperAdmin();
+      // Also allow the specified user to write activities
+      allow write: if isAdminOrSuperAdmin() || isSpecifiedUser();
     }
     
     // ============================================================
@@ -112,9 +143,11 @@ service cloud.firestore {
     // ============================================================
     match /notifications/{notificationId} {
       // All authenticated users can read notifications
-      allow read: if request.auth != null;
+      // Also allow the specified user to read/write notifications
+      allow read: if request.auth != null || isSpecifiedUser();
       // Only admins and superadmins can write notifications
-      allow write: if isAdminOrSuperAdmin();
+      // Also allow the specified user to write notifications
+      allow write: if isAdminOrSuperAdmin() || isSpecifiedUser();
     }
     
     // ============================================================
@@ -171,15 +204,18 @@ service cloud.firestore {
       // Write: Only authenticated users can create/update device mappings
       // In practice, this should be restricted to the device owner or superadmin
       // For Part 1, we allow authenticated users to create their own device mapping
+      // Also allow the specified user (H5hY84Qz85TD9MBPb6UKy3mzLxZ2) to create/update any device
       allow create: if request.auth != null && 
-                       request.resource.data.ownerUid == request.auth.uid;
+                       (request.resource.data.ownerUid == request.auth.uid || isSpecifiedUser());
       
       // Update: Only the owner or superadmin can update
+      // Also allow the specified user to update any device
       allow update: if request.auth != null && 
-                       (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+                       (resource.data.ownerUid == request.auth.uid || isSuperAdmin() || isSpecifiedUser());
       
       // Delete: Only superadmins can delete device mappings
-      allow delete: if isSuperAdmin();
+      // Also allow the specified user to delete device mappings
+      allow delete: if isSuperAdmin() || isSpecifiedUser();
     }
     
     // ============================================================
@@ -205,6 +241,13 @@ service cloud.firestore {
   // ============================================================
   // HELPER FUNCTIONS
   // ============================================================
+  
+  // Check if the authenticated user is the specified device owner
+  // This user (H5hY84Qz85TD9MBPb6UKy3mzLxZ2) has full access to their device and data
+  function isSpecifiedUser() {
+    return request.auth != null && 
+           request.auth.uid == 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2';
+  }
   
   // Check if the authenticated user owns the document
   function isOwner(uid) {

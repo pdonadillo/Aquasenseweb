@@ -1180,17 +1180,14 @@ async function loadSensorData() {
                 console.warn('pH not available in RTDB');
             }
             
-            // Update feeder/motor state from RTDB
-            if (data.state !== undefined && data.state !== null) {
-                const stateValue = String(data.state).toLowerCase();
-                const isOnline = stateValue === 'online';
-                updateFeederStatusDisplay(isOnline);
-                updateMotorToggleButton(isOnline); // Update toggle button appearance
-                console.log('Feeder state loaded from RTDB:', stateValue);
+            // Feeder state is now read from Firestore, not RTDB
+            // Load feeder state from Firestore instead
+            const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+            if (uid) {
+                await loadFeederStateFromFirestore(uid);
             } else {
                 updateFeederStatusDisplay(null);
                 updateMotorToggleButton(null);
-                console.warn('Feeder state not available in RTDB');
             }
             
             // Add initial reading to live chart
@@ -1214,6 +1211,14 @@ async function loadSensorData() {
         
         // Also update the key metrics section
         updateKeyMetrics();
+        
+        // Load feeder state from Firestore (not RTDB)
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+        if (uid) {
+            await loadFeederStateFromFirestore(uid);
+            // Set up Firestore listener for feeder state updates
+            setupFeederStateListener(uid);
+        }
         
     } catch (error) {
         console.error('Error loading sensor data from RTDB:', error);
@@ -1253,6 +1258,9 @@ function updateFeederStatusDisplay(isOnline) {
 let lastMirroredFeederStatus = null;
 
 // Mirror feeder status from Firestore to RTDB
+// NOTE: This function is deprecated - all motor control should use writeFeederStateToRTDB()
+// which writes to Firestore first, then RTDB. This function is kept for backward compatibility
+// but should not be used for new motor control operations.
 async function mirrorFeederStatusToRTDB(deviceId, isOnline) {
     try {
         // Only write to RTDB when value changes (prevent infinite loops)
@@ -1261,17 +1269,16 @@ async function mirrorFeederStatusToRTDB(deviceId, isOnline) {
             return; // Status hasn't changed, skip write
         }
         
-        const statusRef = ref(rtdb, `devices/${deviceId}/status/feeder`);
+        // Use unified write function (Firestore first, then RTDB)
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+        const writeResult = await writeFeederStateToRTDB(deviceId, uid, currentStatus);
         
-        await set(statusRef, {
-            state: currentStatus,
-            updatedAt: Date.now(),
-            source: "web"
-        });
-        
-        lastMirroredFeederStatus = currentStatus; // Cache the new status
-        
-        console.log(`[RTDB] Mirrored feeder status to RTDB for device ${deviceId}: ${currentStatus}`);
+        if (writeResult.success) {
+            lastMirroredFeederStatus = currentStatus; // Cache the new status
+            console.log(`[RTDB] Mirrored feeder status to RTDB for device ${deviceId}: ${currentStatus} (via unified write)`);
+        } else {
+            console.error(`[RTDB] Failed to mirror feeder status: ${writeResult.error}`);
+        }
     } catch (error) {
         console.error('Error mirroring feeder status to RTDB:', error);
         // Don't throw - this is a mirror operation, shouldn't break the UI
@@ -2698,6 +2705,284 @@ const FIRESTORE_WRITE_THROTTLE_MS = 30000; // 30 seconds
 // Using canonical hasSignificantChange helper function (defined at line 1438)
 
 // ============================================================
+// FIRESTORE FEEDER STATE LISTENER (READ FROM FIRESTORE, NOT RTDB)
+// ============================================================
+// Reads feeder state from Firestore (source of truth)
+// Sets up real-time listener for feeder state changes
+// Firestore Path: users/{uid}/sensors/feeder
+function setupFeederStateListener(uid) {
+    if (!uid) {
+        console.log('[FEEDER LISTENER] No UID available, skipping Firestore listener setup');
+        return;
+    }
+    
+    // Guard against duplicate listeners
+    if (window.feederUnsubscribe) {
+        console.log('[FEEDER LISTENER] Firestore listener already active, skipping');
+        return;
+    }
+    
+    try {
+        const feederRef = doc(db, `users/${uid}/sensors/feeder`);
+        
+        console.log('[FEEDER LISTENER] Setting up Firestore listener for feeder state');
+        
+        // Track last known feeder state to detect changes
+        let lastFeederState = window.RUNTIME_STATE?.feederState || null;
+        
+        // Set up Firestore listener for feeder state
+        // This listener automatically syncs Firestore value to RTDB whenever it changes
+        window.feederUnsubscribe = onSnapshot(feederRef, async (snapshot) => {
+            try {
+                if (snapshot.exists()) {
+                    const data = snapshot.data();
+                    const feederState = data.value || null; // "online" or "offline"
+                    
+                    // Only process if state has actually changed
+                    if (feederState === lastFeederState) {
+                        // State hasn't changed, skip processing
+                        return;
+                    }
+                    
+                    // State has changed - update runtime state
+                    lastFeederState = feederState;
+                    window.RUNTIME_STATE.feederState = feederState;
+                    window.RUNTIME_STATE.lastUpdateAt = Date.now();
+                    
+                    // CRITICAL: Sync Firestore value to RTDB (Firestore is source of truth)
+                    // This ensures RTDB always matches Firestore, regardless of source
+                    if (feederState !== null) {
+                        const deviceId = window.RUNTIME_CONTEXT?.deviceId || DEVICE_ID;
+                        const feederStateRef = ref(rtdb, `devices/${deviceId}/status/feeder/state`);
+                        
+                        try {
+                            await set(feederStateRef, feederState);
+                            const verifySnap = await get(feederStateRef);
+                            console.log(`[FEEDER LISTENER] Synced Firestore value (${feederState}) to RTDB: ${verifySnap.val()}`);
+                        } catch (rtdbError) {
+                            console.error('[FEEDER LISTENER] Error syncing to RTDB:', rtdbError);
+                            // Don't throw - continue with UI update even if RTDB sync fails
+                        }
+                    }
+                    
+                    // Emit event for UI bindings
+                    window.RuntimeEvents.emit('sensor:update', {
+                        temperature: window.RUNTIME_STATE.temperature,
+                        ph: window.RUNTIME_STATE.ph,
+                        feederState: feederState,
+                        timestamp: window.RUNTIME_STATE.lastUpdateAt
+                    });
+                    
+                    console.log('[FEEDER LISTENER] Feeder state changed from Firestore:', feederState);
+                } else {
+                    // Document doesn't exist yet
+                    if (lastFeederState !== null) {
+                        // Only update if we had a previous state
+                        lastFeederState = null;
+                        window.RUNTIME_STATE.feederState = null;
+                        console.log('[FEEDER LISTENER] Feeder document removed');
+                    }
+                }
+            } catch (error) {
+                console.error('[FEEDER LISTENER] Error processing Firestore update:', error);
+            }
+        }, (error) => {
+            console.error('[FEEDER LISTENER] Error in Firestore listener:', error);
+        });
+        
+        console.log('[FEEDER LISTENER] Firestore listener active for feeder state');
+    } catch (error) {
+        console.error('[FEEDER LISTENER] Error setting up Firestore listener:', error);
+    }
+}
+
+// Load feeder state from Firestore (initial load)
+async function loadFeederStateFromFirestore(uid) {
+    if (!uid) {
+        console.log('[FEEDER LOAD] No UID available, skipping Firestore load');
+        return;
+    }
+    
+    try {
+        const feederRef = doc(db, `users/${uid}/sensors/feeder`);
+        const snapshot = await getDoc(feederRef);
+        
+        if (snapshot.exists()) {
+            const data = snapshot.data();
+            const feederState = data.value || null; // "online" or "offline"
+            
+            if (feederState) {
+                const isOnline = feederState === 'online';
+                updateFeederStatusDisplay(isOnline);
+                updateMotorToggleButton(isOnline);
+                console.log('[FEEDER LOAD] Feeder state loaded from Firestore:', feederState);
+            } else {
+                updateFeederStatusDisplay(null);
+                updateMotorToggleButton(null);
+            }
+        } else {
+            updateFeederStatusDisplay(null);
+            updateMotorToggleButton(null);
+            console.log('[FEEDER LOAD] Feeder document does not exist in Firestore');
+        }
+    } catch (error) {
+        console.error('[FEEDER LOAD] Error loading feeder state from Firestore:', error);
+        updateFeederStatusDisplay(null);
+        updateMotorToggleButton(null);
+    }
+}
+
+// ============================================================
+// PRIMARY MOTOR CONTROL WRITE (FIRESTORE FIRST, THEN RTDB)
+// ============================================================
+// THIS IS THE PRIMARY WRITE FUNCTION FOR ALL MOTOR/FEEDER CONTROL
+// All motor control operations MUST use this function - it writes to Firestore first, then RTDB
+// This ensures Firestore is the source of truth before RTDB is updated
+// 
+// Usage: All motor control should call this function:
+//   - startFeedingSchedule() → writeFeederStateToRTDB()
+//   - stopFeedingSchedule() → writeFeederStateToRTDB()
+//   - toggleMotor() → writeFeederStateToRTDB()
+//   - keepMotorRunning() → writeFeederStateToRTDB()
+//   - setFeederCommand() → writeMotorCommandToRTDB() (for commands)
+//
+// Firestore Path: users/{uid}/sensors/feeder
+// RTDB Path: devices/{deviceId}/status/feeder/state
+export async function writeFeederStateToRTDB(deviceId, uid, state) {
+    // state should be "online" or "offline"
+    if (!state || (state !== 'online' && state !== 'offline')) {
+        console.error('[RTDB WRITE] Invalid state:', state);
+        return { success: false, error: 'Invalid state' };
+    }
+    
+    try {
+        let stateChanged = true; // Default to true if we can't check
+        
+        // Check if state has changed before writing to Firestore
+        if (uid) {
+            try {
+                const feederRef = doc(db, `users/${uid}/sensors/feeder`);
+                const snapshot = await getDoc(feederRef);
+                
+                if (snapshot.exists()) {
+                    const currentData = snapshot.data();
+                    const currentState = currentData.value || null;
+                    
+                    // Check if state has changed
+                    stateChanged = (currentState !== state);
+                    
+                    if (!stateChanged) {
+                        console.log(`[RTDB WRITE] Firestore state unchanged (${state}), skipping Firestore write (will still write to RTDB)`);
+                    }
+                }
+            } catch (readError) {
+                // If we can't read current state, proceed with write (non-critical)
+                console.log('[RTDB WRITE] Could not check current state, proceeding with write');
+                stateChanged = true; // Assume changed if we can't check
+            }
+        }
+        
+        // STEP 1: Write to Firestore first (source of truth) - only if state changed
+        if (uid && stateChanged) {
+            const feederRef = doc(db, `users/${uid}/sensors/feeder`);
+            await setDoc(feederRef, {
+                type: "device",
+                value: state, // "online" or "offline" as string
+                updatedAt: serverTimestamp()
+            }, { merge: true });
+            console.log(`[RTDB WRITE] Firestore updated first: ${state}`);
+        } else if (uid && !stateChanged) {
+            console.log(`[RTDB WRITE] Firestore state unchanged, skipping Firestore write to avoid timestamp update`);
+        } else {
+            console.log('[RTDB WRITE] No UID available, skipping Firestore write (RTDB write will proceed)');
+        }
+        
+        // STEP 2: Always write to RTDB (for ESP32 communication) - even if Firestore state unchanged
+        const feederStateRef = ref(rtdb, `devices/${deviceId}/status/feeder/state`);
+        await set(feederStateRef, state);
+        
+        // Verify the RTDB write
+        const snap = await get(feederStateRef);
+        const verifiedState = snap.val();
+        console.log(`[RTDB WRITE] RTDB updated: ${verifiedState} at devices/${deviceId}/status/feeder/state`);
+        
+        return { success: true, state: verifiedState, firestoreUpdated: stateChanged };
+    } catch (error) {
+        console.error('[RTDB WRITE] Error writing feeder state:', error);
+        // Don't throw - allow system to continue
+        return { success: false, error: error.message };
+    }
+}
+
+// ============================================================
+// RTDB TO FIRESTORE SENSORS SYNC
+// ============================================================
+// Syncs RTDB sensor readings (temperature, pH) to Firestore sensors subcollection
+// Updates in real-time as RTDB values change
+// NOTE: Feeder state is NOT synced here - it's managed through writeFeederStateToRTDB() only
+// Firestore Path: users/{uid}/sensors/{sensorType}
+async function syncRTDBToFirestoreSensors(uid, temperature, ph, feederState) {
+    if (!uid) {
+        return; // No UID available, skip sync
+    }
+    
+    try {
+        const updates = [];
+        
+        // Update temperature sensor document
+        if (temperature !== null && typeof temperature === 'number') {
+            const tempRef = doc(db, `users/${uid}/sensors/temperature`);
+            updates.push({
+                name: 'temperature',
+                promise: setDoc(tempRef, {
+                    value: temperature,
+                    timestamp: serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                }, { merge: true })
+            });
+        }
+        
+        // Update pH sensor document
+        if (ph !== null && typeof ph === 'number') {
+            const phRef = doc(db, `users/${uid}/sensors/ph`);
+            updates.push({
+                name: 'ph',
+                promise: setDoc(phRef, {
+                    value: ph,
+                    timestamp: serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                }, { merge: true })
+            });
+        }
+        
+        // Feeder state is NOT synced from RTDB - it's managed through writeFeederStateToRTDB() only
+        // This prevents unnecessary timestamp updates when feeder state hasn't changed
+        
+        // Execute all updates in parallel (use allSettled to ensure all are attempted)
+        if (updates.length > 0) {
+            const results = await Promise.allSettled(updates.map(u => u.promise));
+            
+            // Log results
+            let successCount = 0;
+            results.forEach((result, index) => {
+                if (result.status === 'fulfilled') {
+                    successCount++;
+                } else {
+                    console.error(`[RTDB→FIRESTORE] Error updating ${updates[index].name} sensor:`, result.reason);
+                }
+            });
+            
+            if (successCount > 0) {
+                console.log(`[RTDB→FIRESTORE] Synced ${successCount}/${updates.length} sensor(s) to Firestore`);
+            }
+        }
+    } catch (error) {
+        console.error('[RTDB→FIRESTORE] Error syncing sensors to Firestore:', error);
+        // Fail silently - don't break runtime
+    }
+}
+
+// ============================================================
 // RTDB SENSOR LISTENER CORE (DOM-FREE, AUTH-INDEPENDENT)
 // ============================================================
 // Core RTDB listener that updates runtime state and emits events
@@ -2717,7 +3002,9 @@ export function setupSensorRealtimeUpdatesCore() {
         
         // Set up RTDB listener for live sensor readings (temperature, pH, motor state)
         // No auth check - listener works unconditionally
+        // This listener automatically syncs RTDB readings to Firestore sensors subcollection in real-time
         const statusRef = ref(rtdb, rtdbPath);
+        console.log('[CORE] RTDB listener initialized - sensor sync to Firestore will run automatically in background');
         onValue(statusRef, (snapshot) => {
             try {
                 if (snapshot.exists()) {
@@ -2737,16 +3024,14 @@ export function setupSensorRealtimeUpdatesCore() {
                         ph = parseFloat(data.ph);
                     }
                     
-                    // Parse feeder/motor state from RTDB
-                    if (data.state !== undefined && data.state !== null) {
-                        const stateValue = String(data.state).toLowerCase();
-                        feederState = stateValue === 'online' ? 'online' : 'offline';
-                    }
+                    // Feeder state is now read from Firestore, not RTDB
+                    // Keep existing feederState from runtime state (updated by Firestore listener)
+                    feederState = window.RUNTIME_STATE.feederState || null;
                     
-                    // Update runtime state (DOM-free)
+                    // Update runtime state (DOM-free) - only temperature and pH from RTDB
                     window.RUNTIME_STATE.temperature = temperature;
                     window.RUNTIME_STATE.ph = ph;
-                    window.RUNTIME_STATE.feederState = feederState;
+                    // feederState is updated by Firestore listener, don't overwrite here
                     window.RUNTIME_STATE.lastUpdateAt = Date.now();
                     
                     // Update local state for hourly writer (backward compatibility)
@@ -2764,9 +3049,42 @@ export function setupSensorRealtimeUpdatesCore() {
                     
                     console.log('[CORE] sensor:update emitted temp=' + temperature + ' ph=' + ph + ' state=' + feederState);
                     
+                    // Sync RTDB readings to Firestore sensors subcollection in real-time (background, no UI)
+                    // This runs continuously whenever RTDB updates, even without authentication
+                    let uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+                    
+                    // If UID not available, try to resolve runtime context (device ownership mapping)
+                    if (!uid && window.RUNTIME_CONTEXT) {
+                        // Runtime context exists but no UID - might be resolving, retry on next update
+                        console.log('[CORE] Sensor sync: UID not available yet, will retry on next RTDB update');
+                    } else if (!uid) {
+                        // No runtime context at all - try to resolve it (non-blocking)
+                        resolveRuntimeContext().then(context => {
+                            if (context && context.runtimeUid) {
+                                window.RUNTIME_CONTEXT = context;
+                                uid = context.runtimeUid;
+                                // Retry sync with newly resolved UID
+                                syncRTDBToFirestoreSensors(uid, temperature, ph, feederState).catch(err => {
+                                    console.error('[CORE] Sensor sync error (retry):', err);
+                                });
+                            }
+                        }).catch(err => {
+                            // Non-critical - will retry on next RTDB update
+                            console.log('[CORE] Runtime context resolution failed (non-critical):', err.message);
+                        });
+                    }
+                    
+                    // Sync sensors to Firestore if UID is available
+                    if (uid) {
+                        // Fire and forget - sync sensors to Firestore (updates temperature, pH, and motor status)
+                        // This runs in background without any UI dependencies
+                        syncRTDBToFirestoreSensors(uid, temperature, ph, feederState).catch(err => {
+                            console.error('[CORE] Sensor sync error:', err);
+                        });
+                    }
+                    
                     // Trigger hourly writer when new sensor data arrives (respects cooldown)
                     if (HOURLY_TEST_MODE) {
-                        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
                         if (uid && (temperature !== null || ph !== null)) {
                             // Fire and forget - writeHourlyFromRTDB has built-in cooldown/throttle
                             writeHourlyFromRTDB(uid).catch(err => {
@@ -2778,7 +3096,6 @@ export function setupSensorRealtimeUpdatesCore() {
                         }
                     } else {
                         // Legacy behavior (disabled in test mode)
-                        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
                         if (uid && (temperature !== null || ph !== null)) {
                             const tempChanged = hasSignificantChange(lastRecordedValues.temperature, temperature, CHANGE_THRESHOLDS.temperature);
                             const phChanged = hasSignificantChange(lastRecordedValues.ph, ph, CHANGE_THRESHOLDS.ph);
@@ -2799,7 +3116,7 @@ export function setupSensorRealtimeUpdatesCore() {
                     // No data available
                     window.RUNTIME_STATE.temperature = null;
                     window.RUNTIME_STATE.ph = null;
-                    window.RUNTIME_STATE.feederState = null;
+                    // feederState is managed by Firestore listener, don't reset here
                     window.RUNTIME_STATE.lastUpdateAt = Date.now();
                     console.warn('[CORE] RTDB sensor data not available at:', rtdbPath);
                 }
@@ -2936,26 +3253,9 @@ export function setupSensorRealtimeUpdates() {
                         }
                     }
                     
-                    // Update feeder/motor state from RTDB
-                    if (data.state !== undefined && data.state !== null) {
-                        const stateValue = String(data.state).toLowerCase();
-                        const isOnline = stateValue === 'online';
-                        // [FIX] Wrap UI updates in try/catch - runtime must not fail if DOM missing
-                        try {
-                            updateFeederStatusDisplay(isOnline);
-                            updateMotorToggleButton(isOnline); // Update toggle button appearance
-                        } catch (uiError) {
-                            // UI update failed - non-critical, continue runtime
-                        }
-                        console.log('[RTDB] Feeder state updated (RTDB):', stateValue);
-                    } else {
-                        try {
-                            updateFeederStatusDisplay(null);
-                            updateMotorToggleButton(null);
-                        } catch (uiError) {
-                            // UI update failed - non-critical
-                        }
-                    }
+                    // Feeder state is now read from Firestore, not RTDB
+                    // Feeder state updates come from Firestore listener, not RTDB
+                    // Keep existing feeder state from runtime state (updated by Firestore listener)
                     
                     // Add to live chart data (always update chart for real-time display)
                     // [FIX] Wrap UI updates in try/catch - runtime must not fail if DOM missing
@@ -3565,15 +3865,15 @@ export async function getOwnerUidFromDevice(deviceId) {
 // Firestore log is optional (only if uid is available)
 async function startFeedingSchedule(deviceId, uid, scheduleId, scheduleTime, duration) {
     try {
-        // RTDB motor control (always executes, no auth required)
-        const feederStateRef = ref(rtdb, `devices/${deviceId}/status/feeder/state`);
-        await set(feederStateRef, "online");
+        // Write to Firestore first, then RTDB (via wrapper function)
+        const writeResult = await writeFeederStateToRTDB(deviceId, uid, "online");
         
-        // Verify the write
-        const snap = await get(feederStateRef);
-        console.log('[FEEDING VERIFY] RTDB state =', snap.val());
+        if (!writeResult.success) {
+            console.error(`[FEEDING] Failed to write motor state for schedule ${scheduleId}:`, writeResult.error);
+            return;
+        }
         
-        console.log(`[FEEDING] Motor turned ON for schedule ${scheduleId} at ${scheduleTime} (RTDB write successful)`);
+        console.log(`[FEEDING] Motor turned ON for schedule ${scheduleId} at ${scheduleTime} (Firestore→RTDB write successful)`);
         
         // Firestore log is optional - only create if uid is available
         if (uid) {
@@ -3645,24 +3945,41 @@ async function startFeedingSchedule(deviceId, uid, scheduleId, scheduleTime, dur
 // Keep motor running: Ensure motor stays "online" while T ≤ now < E
 async function keepMotorRunning(deviceId, scheduleId) {
     try {
-        // Check current motor state at EXACT RTDB path
-        const feederStateRef = ref(rtdb, `devices/${deviceId}/status/feeder/state`);
-        const snapshot = await get(feederStateRef);
-        
+        // Check current motor state from Firestore (source of truth), not RTDB
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
         let currentState = null;
-        if (snapshot.exists()) {
-            currentState = String(snapshot.val()).toLowerCase();
+        
+        if (uid) {
+            try {
+                const feederRef = doc(db, `users/${uid}/sensors/feeder`);
+                const snapshot = await getDoc(feederRef);
+                
+                if (snapshot.exists()) {
+                    const data = snapshot.data();
+                    const stateValue = data.value;
+                    if (stateValue) {
+                        currentState = String(stateValue).toLowerCase();
+                    }
+                }
+            } catch (firestoreError) {
+                console.warn(`[FEEDING] Error reading from Firestore for schedule ${scheduleId}:`, firestoreError);
+                // Fallback: use runtime state if available
+                currentState = window.RUNTIME_STATE?.feederState || null;
+            }
+        } else {
+            // Fallback: use runtime state if available
+            currentState = window.RUNTIME_STATE?.feederState || null;
         }
         
-        // If motor is not online, turn it on
+        // If motor is not online, turn it on (write to Firestore first, then RTDB)
         if (currentState !== 'online') {
-            await set(feederStateRef, "online");
+            const writeResult = await writeFeederStateToRTDB(deviceId, uid, "online");
             
-            // Verify the write
-            const snap = await get(feederStateRef);
-            console.log('[FEEDING VERIFY] RTDB state =', snap.val());
-            
-            console.log(`[FEEDING] Motor kept ON for schedule ${scheduleId}`);
+            if (writeResult.success) {
+                console.log(`[FEEDING] Motor kept ON for schedule ${scheduleId}`);
+            } else {
+                console.error(`[FEEDING] Failed to keep motor ON for schedule ${scheduleId}:`, writeResult.error);
+            }
         }
     } catch (error) {
         console.error(`[FEEDING] Error keeping motor running for schedule ${scheduleId}:`, error);
@@ -3674,15 +3991,15 @@ async function keepMotorRunning(deviceId, scheduleId) {
 // Firestore log update is optional (only if uid and logId are available)
 async function stopFeedingSchedule(deviceId, uid, scheduleId) {
     try {
-        // RTDB motor control (always executes, no auth required)
-        const feederStateRef = ref(rtdb, `devices/${deviceId}/status/feeder/state`);
-        await set(feederStateRef, "offline");
+        // Write to Firestore first, then RTDB (via wrapper function)
+        const writeResult = await writeFeederStateToRTDB(deviceId, uid, "offline");
         
-        // Verify the write
-        const snap = await get(feederStateRef);
-        console.log('[FEEDING VERIFY] RTDB state =', snap.val());
+        if (!writeResult.success) {
+            console.error(`[FEEDING] Failed to write motor state for schedule ${scheduleId}:`, writeResult.error);
+            return;
+        }
         
-        console.log(`[FEEDING] Motor turned OFF for schedule ${scheduleId} (RTDB write successful)`);
+        console.log(`[FEEDING] Motor turned OFF for schedule ${scheduleId} (Firestore→RTDB write successful)`);
         
         // Firestore log update is optional - only update if uid is available
         if (uid) {
@@ -9042,21 +9359,81 @@ export async function getUserDevices(uid) {
 
 // ============================================================
 // ============================================================
-// DEVICE CONTROL API (RTDB for ESP32 Communication)
+// DEVICE CONTROL API (UNIFIED: FIRESTORE FIRST, THEN RTDB)
 // ============================================================
 
-// Set feeder command (writes to RTDB for ESP32 to read)
+// ============================================================
+// PRIMARY MOTOR COMMAND WRITE (FIRESTORE FIRST, THEN RTDB)
+// ============================================================
+// THIS IS THE PRIMARY WRITE FUNCTION FOR ALL MOTOR COMMANDS
+// All motor command operations MUST use this function - it writes to Firestore first, then RTDB
+// This ensures Firestore is the source of truth before RTDB is updated
+// 
+// Usage: All motor commands should call this function:
+//   - setFeederCommand() → writeMotorCommandToRTDB()
+//   - feedOn() → setFeederCommand() → writeMotorCommandToRTDB()
+//   - feedOff() → setFeederCommand() → writeMotorCommandToRTDB()
+//   - toggleFeeder() → setFeederCommand() → writeMotorCommandToRTDB()
+//
+// Firestore Path: users/{uid}/sensors/feeder (stores lastCommand)
+// RTDB Path: devices/{deviceId}/commands/feeder
+export async function writeMotorCommandToRTDB(deviceId, uid, command) {
+    // command should be "on" or "off"
+    if (!command || (command !== 'on' && command !== 'off')) {
+        console.error('[MOTOR COMMAND] Invalid command:', command);
+        return { success: false, error: 'Invalid command' };
+    }
+    
+    try {
+        // STEP 1: Write to Firestore first (source of truth)
+        if (uid) {
+            const feederRef = doc(db, `users/${uid}/sensors/feeder`);
+            await setDoc(feederRef, {
+                type: "device",
+                lastCommand: command, // "on" or "off"
+                commandUpdatedAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            }, { merge: true });
+            console.log(`[MOTOR COMMAND] Firestore updated first: ${command}`);
+        } else {
+            console.log('[MOTOR COMMAND] No UID available, skipping Firestore write (RTDB write will proceed)');
+        }
+        
+        // STEP 2: Write to RTDB (after Firestore write succeeds)
+        const commandRef = ref(rtdb, `devices/${deviceId}/commands/feeder`);
+        await set(commandRef, {
+            state: command, // "on" | "off"
+            updatedAt: Date.now(),
+            source: "web"
+        });
+        
+        // Verify the RTDB write
+        const snap = await get(commandRef);
+        const verifiedCommand = snap.val();
+        console.log(`[MOTOR COMMAND] RTDB updated: ${verifiedCommand?.state || verifiedCommand} at devices/${deviceId}/commands/feeder`);
+        
+        return { success: true, command: verifiedCommand?.state || verifiedCommand };
+    } catch (error) {
+        console.error('[MOTOR COMMAND] Error writing motor command:', error);
+        // Don't throw - allow system to continue
+        return { success: false, error: error.message };
+    }
+}
+
+// Set feeder command (writes to Firestore first, then RTDB for ESP32 to read)
 export async function setFeederCommand(deviceId, state) {
     try {
-        await set(
-            ref(rtdb, `devices/${deviceId}/commands/feeder`),
-            {
-                state: state, // "on" | "off"
-                updatedAt: Date.now(),
-                source: "web"
-            }
-        );
-        console.log(`[RTDB] Set feeder command for ${deviceId}: ${state}`);
+        // Get UID from runtime context
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+        
+        // Use unified write function (Firestore first, then RTDB)
+        const writeResult = await writeMotorCommandToRTDB(deviceId, uid, state);
+        
+        if (!writeResult.success) {
+            throw new Error(writeResult.error || 'Failed to write motor command');
+        }
+        
+        console.log(`[MOTOR COMMAND] Set feeder command for ${deviceId}: ${state}`);
     } catch (error) {
         console.error('Error setting feeder command:', error);
         showNotification('Error sending feeder command', 'error');
@@ -9184,30 +9561,47 @@ function updateButtonState(btn, textEl, iconEl, isOnline) {
 // Motor toggle function - toggles between online/offline based on current state
 window.toggleMotor = async function() {
     try {
-        // Get current state from RTDB (no auth check - works without login)
-        const feederStateRef = ref(rtdb, `devices/${DEVICE_ID}/status/feeder/state`);
-        const snapshot = await get(feederStateRef);
-        
+        // Get current state from Firestore (source of truth), not RTDB
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
         let currentState = 'offline'; // Default to offline
-        if (snapshot.exists()) {
-            const stateValue = snapshot.val();
-            if (stateValue) {
-                currentState = String(stateValue).toLowerCase();
+        
+        if (uid) {
+            try {
+                const feederRef = doc(db, `users/${uid}/sensors/feeder`);
+                const snapshot = await getDoc(feederRef);
+                
+                if (snapshot.exists()) {
+                    const data = snapshot.data();
+                    const stateValue = data.value;
+                    if (stateValue) {
+                        currentState = String(stateValue).toLowerCase();
+                    }
+                }
+            } catch (firestoreError) {
+                console.warn('[TOGGLE] Error reading from Firestore, using default state:', firestoreError);
             }
+        } else {
+            // Fallback: use runtime state if available
+            currentState = window.RUNTIME_STATE?.feederState || 'offline';
         }
         
         // Toggle state: online -> offline, offline -> online
         const newState = currentState === 'online' ? 'offline' : 'online';
         
-        // Write state string directly to RTDB (no auth required)
-        await set(feederStateRef, newState);
+        // Write to Firestore first, then RTDB (via wrapper function)
+        // uid is already declared above, reuse it
+        const writeResult = await writeFeederStateToRTDB(DEVICE_ID, uid, newState);
         
-        // Verify the write
-        const verifySnap = await get(feederStateRef);
-        console.log('[RTDB] Motor toggled to:', verifySnap.val(), 'at devices/' + DEVICE_ID + '/status/feeder/state');
+        if (!writeResult.success) {
+            console.error('[RTDB] Failed to toggle motor state:', writeResult.error);
+            showNotification('Failed to toggle motor', 'error');
+            return;
+        }
+        
+        console.log('[RTDB] Motor toggled to:', writeResult.state, 'at devices/' + DEVICE_ID + '/status/feeder/state');
         
         showNotification(`Motor ${newState.toUpperCase()}`, 'success');
-        console.log(`[RTDB] Toggled motor state to ${newState} at devices/${DEVICE_ID}/status/feeder/state`);
+        console.log(`[RTDB] Toggled motor state to ${newState} (Firestore→RTDB write successful)`);
         
         // Update button appearance immediately
         updateMotorToggleButton(newState === 'online');
@@ -11195,7 +11589,22 @@ export async function bootRuntimeCore({sourcePage = 'unknown'} = {}) {
         }
         
         // Step 3: Start RTDB live listeners (works without auth)
+        // Note: Feeder state is now read from Firestore, not RTDB
         setupSensorRealtimeUpdatesCore();
+        
+        // Step 3.5: Start Firestore feeder state listener (reads from Firestore, not RTDB)
+        const runtimeUid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+        if (runtimeUid) {
+            setupFeederStateListener(runtimeUid);
+        } else {
+            // Retry when runtime context is available
+            setTimeout(() => {
+                const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+                if (uid) {
+                    setupFeederStateListener(uid);
+                }
+            }, 2000);
+        }
         
         // Step 4: Start feeding schedule executor (motor RTDB writes are unconditional)
         setupFeedingScheduleExecutionCore();

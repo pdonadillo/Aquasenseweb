@@ -1,6 +1,6 @@
 {
   "name": "aquasense/backend",
   "description": "Backend for AquaSense web application (JavaScript/Node.js)",
-  "type": "project",
+    "type": "project",
   "note": "This project has been migrated from PHP to JavaScript/Node.js. See api/package.json for Node.js dependencies."
 }

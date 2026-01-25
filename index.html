@@ -391,6 +391,15 @@
     <script type="module" src="main.js"></script>
     <!-- Background runtime bootstrap: Runs RTDB listeners, feeding schedules, RTDB→Firestore sync, and rollups on index page -->
     <!-- This runs completely in the background - no UI required -->
+    <!-- 
+        Background tasks running on index.html:
+        1. RTDB sensor listener (temperature, pH, motor status) - updates in real-time
+        2. RTDB→Firestore sensor sync - writes sensor readings to Firestore sensors subcollection in real-time
+        3. Feeding schedule execution - automatically starts/stops motor based on schedules
+        4. Hourly RTDB→Firestore data sync - aggregates sensor data into hourly records
+        5. Report rollups - generates daily/weekly/monthly reports from hourly data
+        All tasks run continuously without any UI dependencies or user interaction required.
+    -->
     <script type="module">
         import { 
             bootRuntimeCore, 
@@ -402,6 +411,8 @@
         // Boot runtime core (idempotent - safe to call multiple times)
         // This handles: device setup, RTDB listeners, feeding schedules, rollups
         // Feeding schedules are automatically started via setupFeedingScheduleExecutionCore()
+        // RTDB→Firestore sensor sync is automatically started via setupSensorRealtimeUpdatesCore()
+        // All background tasks run without UI - completely headless operation
         bootRuntimeCore({sourcePage: 'index'});
         
         // Additional background tasks that run continuously
