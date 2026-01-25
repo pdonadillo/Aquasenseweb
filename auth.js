@@ -57,17 +57,36 @@ export async function handleLogin() {
         const emailKey = email.toLowerCase();
         console.log('Looking for user:', emailKey);
         
+        // [FIX] Check if user is already signed in - sign out first to allow setPersistence
+        if (auth.currentUser) {
+            console.log('[AUTH] User already signed in, signing out first to allow persistence change');
+            try {
+                await signOut(auth);
+                // Wait a moment for sign out to complete
+                await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (signOutError) {
+                console.warn('[AUTH] Error signing out existing user:', signOutError);
+                // Continue anyway - setPersistence might still work
+            }
+        }
+        
         // Set persistence based on "Remember me" checkbox
-        if (rememberMe) {
-            await setPersistence(auth, browserLocalPersistence);
-            console.log('Auth persistence set to LOCAL (Remember me enabled)');
-        } else {
-            await setPersistence(auth, browserSessionPersistence);
-            console.log('Auth persistence set to SESSION (Remember me disabled)');
+        // [FIX] setPersistence must be called when no user is signed in
+        try {
+            if (rememberMe) {
+                await setPersistence(auth, browserLocalPersistence);
+                console.log('[AUTH] Auth persistence set to LOCAL (Remember me enabled)');
+            } else {
+                await setPersistence(auth, browserSessionPersistence);
+                console.log('[AUTH] Auth persistence set to SESSION (Remember me disabled)');
+            }
+        } catch (persistenceError) {
+            console.warn('[AUTH] setPersistence failed (may already be set):', persistenceError.message);
+            // Continue with sign in - persistence might already be correct
         }
         
         // Sign in with Firebase Auth
-        console.log('Signing in with Firebase Auth...');
+        console.log('[AUTH] Signing in with Firebase Auth...');
         const userCredential = await signInWithEmailAndPassword(auth, emailKey, password);
         const firebaseUser = userCredential.user;
         console.log('Firebase Auth login successful:', firebaseUser.uid);
@@ -84,6 +103,17 @@ export async function handleLogin() {
         
         const user = snap.data();
         console.log('User data found:', user);
+
+        // Ensure device ownership mapping exists (Part 1 - Device Ownership Mapping)
+        // This runs only on successful login when ownership is known
+        try {
+            const { ensureDeviceOwnershipMapping, DEVICE_ID } = await import('./dashboard.js');
+            await ensureDeviceOwnershipMapping(DEVICE_ID, firebaseUser.uid);
+            console.log('[AUTH] Device ownership mapping ensured for device:', DEVICE_ID);
+        } catch (error) {
+            console.error('[AUTH] Error ensuring device ownership mapping:', error);
+            // Don't block login if mapping fails
+        }
 
         // Import closeModal dynamically to avoid circular dependency
         const { closeModal } = await import('./ui.js');

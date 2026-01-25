@@ -1,11 +1,278 @@
 // this is dashboard.js
 // dashboard.js - Dashboard-specific functionality
-console.log('[BOOT] dashboard.js loaded');
+console.log('[BOOT] dashboard.js started');
 
-import { db, rtdb, doc, getDoc, setDoc, collection, getDocs, updateDoc, deleteDoc, addDoc, auth, serverTimestamp, query, orderBy, limit, onSnapshot, onAuthStateChanged, runTransaction, increment, ref, set, onValue, off } from './firebase-init.js';
+import { db, rtdb, doc, getDoc, setDoc, collection, getDocs, updateDoc, deleteDoc, addDoc, auth, serverTimestamp, query, orderBy, limit, onSnapshot, onAuthStateChanged, runTransaction, increment, ref, set, get, update, onValue, off } from './firebase-init.js';
 import { updateUserDisplayName, verifyRoleOrRedirect } from './auth.js';
 import { formatDate } from './utils.js';
 import { showNotification } from './notifications.js';
+
+// ============================================================
+// RUNTIME CODE CHECKER & SAFETY GUARDS
+// ============================================================
+// Lightweight code checker to prevent runtime-breaking bugs
+// Detects duplicate declarations, undefined functions, invalid Firebase paths, and auth-related crashes
+
+// Helper registry for duplicate detection
+window.__DECLARED_HELPERS__ = window.__DECLARED_HELPERS__ || new Set();
+window.__DECLARED_FUNCTIONS__ = window.__DECLARED_FUNCTIONS__ || new Map();
+window.__CODE_CHECKER_DIAGNOSTICS__ = {
+    duplicates: [],
+    missing: [],
+    firebaseWarnings: [],
+    wrappedFunctions: []
+};
+
+// Register a helper function (detects duplicates)
+function registerHelper(name, location = 'unknown') {
+    if (window.__DECLARED_HELPERS__.has(name)) {
+        const existing = window.__DECLARED_FUNCTIONS__.get(name);
+        console.error(`[CODE CHECKER] Duplicate helper detected: ${name}`);
+        console.error(`[CODE CHECKER]   First declaration: ${existing || 'unknown'}`);
+        console.error(`[CODE CHECKER]   Duplicate at: ${location}`);
+        window.__CODE_CHECKER_DIAGNOSTICS__.duplicates.push({
+            name: name,
+            first: existing || 'unknown',
+            duplicate: location
+        });
+    } else {
+        window.__DECLARED_HELPERS__.add(name);
+        window.__DECLARED_FUNCTIONS__.set(name, location);
+    }
+}
+
+// Check if a function is defined
+function checkFunctionExists(name, context = 'global') {
+    if (typeof window[name] === 'function' || typeof eval(`typeof ${name}`) !== 'undefined') {
+        return true;
+    }
+    console.error(`[CODE CHECKER] Missing function: ${name} (referenced in ${context})`);
+    window.__CODE_CHECKER_DIAGNOSTICS__.missing.push({ name, context });
+    return false;
+}
+
+// Safe function wrapper with error handling
+function wrapFunction(fn, name, context = '') {
+    if (typeof fn !== 'function') {
+        console.error(`[CODE CHECKER] Cannot wrap non-function: ${name}`);
+        return fn;
+    }
+    
+    // Check if function is async
+    const isAsync = fn.constructor.name === 'AsyncFunction';
+    
+    const wrapped = function(...args) {
+        try {
+            const result = fn.apply(this, args);
+            // If original is async, await it; otherwise return as-is
+            if (isAsync || result instanceof Promise) {
+                return Promise.resolve(result).catch(error => {
+                    console.error(`[CODE CHECKER] Error in ${name}${context ? ` (${context})` : ''}:`, error.message);
+                    console.error(`[CODE CHECKER] Stack trace:`, error.stack);
+                    window.__CODE_CHECKER_DIAGNOSTICS__.wrappedFunctions.push({
+                        name: name,
+                        error: error.message,
+                        stack: error.stack,
+                        timestamp: new Date().toISOString()
+                    });
+                    throw error; // Re-throw to maintain original behavior
+                });
+            }
+            return result;
+        } catch (error) {
+            console.error(`[CODE CHECKER] Error in ${name}${context ? ` (${context})` : ''}:`, error.message);
+            console.error(`[CODE CHECKER] Stack trace:`, error.stack);
+            window.__CODE_CHECKER_DIAGNOSTICS__.wrappedFunctions.push({
+                name: name,
+                error: error.message,
+                stack: error.stack,
+                timestamp: new Date().toISOString()
+            });
+            throw error; // Re-throw to maintain original behavior
+        }
+    };
+    
+    // Preserve function name for debugging
+    Object.defineProperty(wrapped, 'name', { value: name, writable: false });
+    return wrapped;
+}
+
+// Firebase path validation
+function validateFirestorePath(path, context = '') {
+    if (!path || path === null || path === undefined) {
+        const msg = `[CODE CHECKER] Invalid Firestore path: ${path}${context ? ` (${context})` : ''}`;
+        console.warn(msg);
+        window.__CODE_CHECKER_DIAGNOSTICS__.firebaseWarnings.push({ type: 'null_path', path, context });
+        return false;
+    }
+    if (typeof path !== 'string' || path.trim() === '') {
+        const msg = `[CODE CHECKER] Empty Firestore path${context ? ` (${context})` : ''}`;
+        console.warn(msg);
+        window.__CODE_CHECKER_DIAGNOSTICS__.firebaseWarnings.push({ type: 'empty_path', path, context });
+        return false;
+    }
+    return true;
+}
+
+// Check UID before Firestore write
+function validateUidForWrite(uid, context = '') {
+    if (!uid || uid === null || uid === undefined) {
+        const msg = `[CODE CHECKER] Missing UID for Firestore write${context ? ` (${context})` : ''}`;
+        console.warn(msg);
+        window.__CODE_CHECKER_DIAGNOSTICS__.firebaseWarnings.push({ type: 'missing_uid', context });
+        return false;
+    }
+    return true;
+}
+
+// Check read-only mode before write
+function checkReadOnlyMode(context = '') {
+    if (typeof IS_REPORT_FETCH_ONLY !== 'undefined' && IS_REPORT_FETCH_ONLY === true) {
+        const msg = `[CODE CHECKER] Firestore write attempted in read-only mode${context ? ` (${context})` : ''}`;
+        console.warn(msg);
+        window.__CODE_CHECKER_DIAGNOSTICS__.firebaseWarnings.push({ type: 'read_only_write', context });
+        return true; // Returns true if in read-only mode
+    }
+    return false;
+}
+
+// Diagnostic summary output
+function outputDiagnosticSummary() {
+    const diag = window.__CODE_CHECKER_DIAGNOSTICS__;
+    const duplicates = diag.duplicates.length;
+    const missing = diag.missing.length;
+    const firebaseWarnings = diag.firebaseWarnings.length;
+    
+    console.log('%c[SYSTEM CHECK]', 'font-weight: bold; color: #4CAF50;');
+    console.log(`%c✔ Firebase initialized`, 'color: #4CAF50;');
+    console.log(`%c✔ RTDB listeners active`, 'color: #4CAF50;');
+    
+    // Runtime context status
+    const runtimeContext = window.RUNTIME_CONTEXT;
+    if (runtimeContext && runtimeContext.runtimeUid) {
+        console.log(`%c✔ Runtime context resolved (source: ${runtimeContext.source || 'unknown'})`, 'color: #4CAF50;');
+    } else {
+        console.log(`%c⚠ Runtime context: not resolved`, 'color: #FF9800;');
+    }
+    
+    // Duplicates
+    if (duplicates === 0) {
+        console.log(`%c✔ Duplicate helpers: none`, 'color: #4CAF50;');
+    } else {
+        console.log(`%c⚠ Duplicate helpers: ${duplicates}`, 'color: #FF9800;');
+        diag.duplicates.forEach(dup => {
+            console.warn(`  - ${dup.name} (first: ${dup.first}, duplicate: ${dup.duplicate})`);
+        });
+    }
+    
+    // Missing functions
+    if (missing === 0) {
+        console.log(`%c✔ Missing functions: none`, 'color: #4CAF50;');
+    } else {
+        console.log(`%c⚠ Missing functions: ${missing}`, 'color: #FF9800;');
+        diag.missing.forEach(m => {
+            console.warn(`  - ${m.name} (referenced in ${m.context})`);
+        });
+    }
+    
+    // Firebase warnings
+    if (firebaseWarnings === 0) {
+        console.log(`%c✔ Firebase validation: no warnings`, 'color: #4CAF50;');
+    } else {
+        console.log(`%c⚠ Firebase warnings: ${firebaseWarnings}`, 'color: #FF9800;');
+    }
+    
+    console.log('%c[SYSTEM CHECK] End', 'font-weight: bold; color: #4CAF50;');
+}
+
+// Auto-run diagnostic summary after page load
+if (typeof window !== 'undefined') {
+    // Run after a short delay to allow initialization
+    setTimeout(() => {
+        outputDiagnosticSummary();
+    }, 2000);
+}
+
+// ============================================================
+// READ-ONLY GUARD FOR REPORT FETCHING
+// ============================================================
+// When true, prevents all Firestore writes during report fetching/rendering
+// This prevents quota exhaustion from initialization/backfill logic running during dashboard load
+const IS_REPORT_FETCH_ONLY = true;
+
+// ============================================================
+// HOURLY TEST MODE GUARD (PREVENTS WRITE STORMS)
+// ============================================================
+// When true, disables all automatic Firestore writes except the single hourly writer
+// This prevents 429 errors from multiple code paths writing to the same hourly document
+const HOURLY_TEST_MODE = true;
+
+// ============================================================
+// RUNTIME STATE (CORE - DOM-FREE)
+// ============================================================
+// Global runtime state that persists regardless of UI or auth
+window.RUNTIME_STATE = window.RUNTIME_STATE || {
+    temperature: null,
+    ph: null,
+    feederState: null,
+    lastUpdateAt: null
+};
+
+// ============================================================
+// RUNTIME EVENT BUS (CORE - DOM-FREE)
+// ============================================================
+// Event bus for decoupling runtime core from UI
+// UI can subscribe to events, but runtime never depends on UI
+window.RuntimeEvents = window.RuntimeEvents || {
+    listeners: {},
+    on(event, fn) {
+        if (!this.listeners[event]) {
+            this.listeners[event] = [];
+        }
+        this.listeners[event].push(fn);
+    },
+    emit(event, payload) {
+        if (!this.listeners[event]) return;
+        // Swallow listener errors - UI failures must not break runtime
+        this.listeners[event].forEach(fn => {
+            try {
+                fn(payload);
+            } catch (error) {
+                console.warn('[CORE] Event listener error (non-critical):', error);
+            }
+        });
+    },
+    off(event, fn) {
+        if (!this.listeners[event]) return;
+        this.listeners[event] = this.listeners[event].filter(f => f !== fn);
+    }
+};
+
+// ============================================================
+// CLIENT STATE (RTDB → LOCAL STATE → FIRESTORE)
+// ============================================================
+// RTDB listeners update these values (read-only from RTDB)
+// The single hourly writer reads from these values
+let latestTemperature = null;
+let latestPH = null;
+let latestTimestamp = null;
+
+// Rate-limiting gate for hourly writes (prevents write storms)
+let lastWrittenHourKey = null;
+let LAST_HOURLY_WRITE_KEY = null;  // `${dateStr}-${hourStr}`
+let LAST_HOURLY_WRITE_AT = 0;
+const HOURLY_WRITE_COOLDOWN_MS = 60_000; // 1 minute (testing safe)
+
+// ============================================================
+// ROLLUP THROTTLING (DAILY/WEEKLY/MONTHLY)
+// ============================================================
+// Prevents write storms for daily/weekly/monthly rollups
+let LAST_ROLLUP_AT = { daily: 0, weekly: 0, monthly: 0 };
+const ROLLUP_COOLDOWN = { 
+    daily: 5 * 60_000,    // 5 minutes
+    weekly: 60 * 60_000,  // 1 hour
+    monthly: 60 * 60_000   // 1 hour
+};
 
 // ============================================================
 // REPORT MONTH FILTER STATE
@@ -26,33 +293,38 @@ const reportRowsState = {
     weeklyRows: [],
     monthlyRows: [],
     mortalityRows: [],
-    hourlyRows: []
+    hourlyRows: [],
+    productionRows: []
 };
 
-// Global chart instance for water quality chart
+// Global chart instance for live sensor readings chart
 let waterQualityChart = null;
+
+// Store live sensor readings for chart (last 60 data points)
+const liveSensorData = {
+    temperature: [],
+    ph: [],
+    timestamps: [],
+    maxDataPoints: 60 // Show last 60 readings
+};
 
 // Store chart instances for cleanup
 const chartInstances = {
     daily: {
         temperature: null,
-        ph: null,
-        feed: null
+        ph: null
     },
     weekly: {
         temperature: null,
-        ph: null,
-        feed: null
+        ph: null
     },
     monthly: {
         temperature: null,
-        ph: null,
-        feed: null
+        ph: null
     },
     hourly: {
         temperature: null,
-        ph: null,
-        feed: null
+        ph: null
     }
 };
 
@@ -361,7 +633,6 @@ async function seedHourlyIfEmpty(uid, dateStr) {
             phSum: 0,
             phCount: 0,
             phAvg: 0,
-            feedUsedKg: 0,
             isSeed: true,
             source: "web",
             generatedAt: serverTimestamp(),
@@ -393,7 +664,6 @@ async function seedDailyIfEmpty(uid, dateStr) {
             date: dateStr,
             avgTemperature: 0,
             avgPh: 0,
-            totalFeedKg: 0,
             coverageHours: 0,
             isSeed: true,
             source: "web",
@@ -425,7 +695,6 @@ async function seedWeeklyIfEmpty(uid, weekStr) {
             week: weekStr,
             avgTemperature: 0,
             avgPh: 0,
-            totalFeedKg: 0,
             coverageDays: 0,
             isSeed: true,
             source: "web",
@@ -457,7 +726,6 @@ async function seedMonthlyIfEmpty(uid, monthStr) {
             month: monthStr,
             avgTemperature: 0,
             avgPh: 0,
-            totalFeedKg: 0,
             coverageDays: 0,
             isSeed: true,
             source: "web",
@@ -503,6 +771,9 @@ const SAMPLING_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 // Sample current hour with latest sensor readings
 async function sampleCurrentHour(uid) {
+    // HARD DISABLED - Quota-safe mode: Only writeHourlyFromRTDB() writes hourly data
+    console.warn('[HOURLY WRITE] sampleCurrentHour DISABLED (quota-safe mode)');
+    return;
     try {
         const now = new Date();
         const dateStr = formatDateString(now);
@@ -556,7 +827,6 @@ async function sampleCurrentHour(uid) {
                     phSum: ph !== null ? ph : 0,
                     phCount: ph !== null ? 1 : 0,
                     phAvg: ph !== null ? ph : 0,
-                    feedUsedKg: 0,
                     isSeed: false,
                     source: "web",
                     updatedAt: serverTimestamp()
@@ -610,7 +880,7 @@ async function sampleCurrentHour(uid) {
 }
 
 // Start hourly sampling for logged-in user
-function startHourlySampler(uid) {
+export function startHourlySampler(uid) {
     // Stop any existing sampler
     stopHourlySampler();
     
@@ -642,6 +912,14 @@ export async function initializeUserDashboard() {
     try {
         console.log('[INIT] initializeReports available:', typeof initializeReports);
         
+        // Ensure device record exists (non-blocking, works with or without auth)
+        // This must run on every dashboard initialization, not just on login
+        await ensureDeviceRecordExists();
+        
+        // Resolve runtime context (works with or without authentication)
+        window.RUNTIME_CONTEXT = await resolveRuntimeContext();
+        console.log('[INIT] Runtime context resolved:', window.RUNTIME_CONTEXT);
+        
         // Update user name in navigation
         await updateUserDisplayName();
         
@@ -649,7 +927,7 @@ export async function initializeUserDashboard() {
         // This ensures Firebase is fully initialized before we try to access it
         const initReports = async () => {
             try {
-                const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+                const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
                 
                 if (!uid) {
                     console.log('[REPORT INIT] No user UID available, skipping report initialization');
@@ -731,10 +1009,19 @@ export async function initializeUserDashboard() {
         } else {
             // Otherwise wait for auth state change
             onAuthStateChanged(auth, async (user) => {
+                // Re-resolve runtime context on auth state change
+                window.RUNTIME_CONTEXT = await resolveRuntimeContext();
+                console.log('[AUTH STATE] Runtime context re-resolved:', window.RUNTIME_CONTEXT);
+                
                 if (!user) {
                     console.log('[REPORT INIT] No authenticated user, skipping report initialization');
-                    // Cleanup sensor listeners on logout
-                    cleanupSensorListeners();
+                    // [FIX] Do NOT cleanup sensor listeners on logout - runtime must persist
+                    // Runtime continues running even when user logs out
+                    console.log('[AUTH STATE] user logged out; device runtime remains active');
+                    console.log('[AUTH STATE] Runtime context:', window.RUNTIME_CONTEXT);
+                    console.log('[AUTH STATE] RTDB listener active:', !!(window.sensorUnsubscribes && window.sensorUnsubscribes.rtdb));
+                    console.log('[AUTH STATE] Feeding schedule interval active:', !!feedingScheduleInterval);
+                    console.log('[AUTH STATE] Rollup interval active:', !!window.rollupIntervalId);
                     return;
                 }
                 try {
@@ -753,7 +1040,9 @@ export async function initializeUserDashboard() {
     await loadSensorData();
     
     // Set up real-time sensor updates
-    setupSensorRealtimeUpdates();
+    // Runtime core is booted separately (via bootRuntimeCore in main.js)
+    // Only attach UI bindings here
+    attachSensorUIBindings();
     
     // Update next feeding alert message
     await updateNextFeedingAlert();
@@ -766,6 +1055,9 @@ export async function initializeUserDashboard() {
     
     // Set up auto-refresh for feeding schedules
     setupFeedingScheduleAutoRefresh();
+    
+    // Runtime core handles feeding schedule execution (via bootRuntimeCore)
+    // No need to call here - it's already running
     
     // Initialize summary computation system
     await initializeSummarySystem();
@@ -785,9 +1077,30 @@ export async function initializeUserDashboard() {
     await loadWeeklySummaryReport();
     await loadMonthlySummaryReport();
     await loadMortalityLogReport();
+    await loadProductionRecordsReport();
     
     // Initialize analytics UI selectors and load analytics data
     initializeAnalyticsSelectors();
+    
+    // Set up periodic rollup execution (runs every 5 minutes, respects internal cooldowns)
+    // This ensures daily/weekly/monthly reports are computed from hourly data
+    if (typeof window.rollupIntervalId === 'undefined') {
+        console.log('[ROLLUP] Setting up periodic rollup execution (every 5 minutes)');
+        console.log('[ROLLUP] Guard check: window.rollupIntervalId =', window.rollupIntervalId);
+        // Run immediately on init
+        runRollupsForCurrentContext().catch(err => {
+            console.error('[ROLLUP] Error in initial rollup execution:', err);
+        });
+        // Then run every 5 minutes
+        window.rollupIntervalId = setInterval(() => {
+            runRollupsForCurrentContext().catch(err => {
+                console.error('[ROLLUP] Error in periodic rollup execution:', err);
+            });
+        }, 5 * 60 * 1000); // 5 minutes
+        console.log('[ROLLUP] Interval started, window.rollupIntervalId =', window.rollupIntervalId);
+    } else {
+        console.log('[ROLLUP] Rollup interval already exists, skipping. Current ID:', window.rollupIntervalId);
+    }
     
     // Initialize interactive water quality chart
     initializeWaterQualityChart();
@@ -829,74 +1142,86 @@ export async function initializeUserDashboard() {
     updateFeedingSchedule();
 }
 
-// Load sensor data from Firestore
+// Load sensor data from RTDB (initial load)
 async function loadSensorData() {
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
-        if (!uid) {
-            console.warn('No user UID found, cannot load sensor data');
-            return;
-        }
+        // Device ID for RTDB path (hardcoded as per requirements)
+        const rtdbPath = `devices/${DEVICE_ID}/status/feeder`;
         
-        console.log('Loading sensor data for user:', uid);
+        console.log('Loading sensor data from RTDB:', rtdbPath);
         
-        // Load temperature sensor
-        const tempRef = doc(db, `users/${uid}/sensors/temperature`);
-        const tempSnap = await getDoc(tempRef);
+        // Fetch sensor data from RTDB
+        const statusRef = ref(rtdb, rtdbPath);
+        const snapshot = await get(statusRef);
         
-        if (tempSnap.exists()) {
-            const tempData = tempSnap.data();
-            const tempValue = tempData.value !== undefined ? tempData.value : '--';
-            updateSensorDisplay('temperature', tempValue, '°C');
-            console.log('Temperature loaded:', tempValue);
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            
+            let temperature = null;
+            let ph = null;
+            
+            // Update temperature from RTDB
+            if (data.temperature !== undefined && data.temperature !== null) {
+                temperature = parseFloat(data.temperature);
+                updateSensorDisplay('temperature', temperature, '°C');
+                console.log('Temperature loaded from RTDB:', temperature);
+            } else {
+                updateSensorDisplay('temperature', '--', '°C');
+                console.warn('Temperature not available in RTDB');
+            }
+            
+            // Update pH from RTDB
+            if (data.ph !== undefined && data.ph !== null) {
+                ph = parseFloat(data.ph);
+                updateSensorDisplay('ph', ph, '');
+                console.log('pH loaded from RTDB:', ph);
+            } else {
+                updateSensorDisplay('ph', '--', '');
+                console.warn('pH not available in RTDB');
+            }
+            
+            // Update feeder/motor state from RTDB
+            if (data.state !== undefined && data.state !== null) {
+                const stateValue = String(data.state).toLowerCase();
+                const isOnline = stateValue === 'online';
+                updateFeederStatusDisplay(isOnline);
+                updateMotorToggleButton(isOnline); // Update toggle button appearance
+                console.log('Feeder state loaded from RTDB:', stateValue);
+            } else {
+                updateFeederStatusDisplay(null);
+                updateMotorToggleButton(null);
+                console.warn('Feeder state not available in RTDB');
+            }
+            
+            // Add initial reading to live chart
+            addLiveSensorReading(temperature, ph);
+            
+            // Initialize last recorded values (so first change after load will be detected)
+            if (temperature !== null) {
+                lastRecordedValues.temperature = temperature;
+            }
+            if (ph !== null) {
+                lastRecordedValues.ph = ph;
+            }
         } else {
-            console.warn('Temperature sensor document not found');
+            // No data available, set defaults
+            console.warn('RTDB sensor data not available at:', rtdbPath);
             updateSensorDisplay('temperature', '--', '°C');
-        }
-        
-        // Load pH sensor
-        const phRef = doc(db, `users/${uid}/sensors/ph`);
-        const phSnap = await getDoc(phRef);
-        
-        if (phSnap.exists()) {
-            const phData = phSnap.data();
-            const phValue = phData.value !== undefined ? phData.value : '--';
-            updateSensorDisplay('ph', phValue, '');
-            console.log('pH loaded:', phValue);
-        } else {
-            console.warn('pH sensor document not found');
             updateSensorDisplay('ph', '--', '');
-        }
-        
-        // Load feeder status
-        const feederRef = doc(db, `users/${uid}/sensors/feeder`);
-        const feederSnap = await getDoc(feederRef);
-        
-        if (feederSnap.exists()) {
-            const feederData = feederSnap.data();
-            const feederValue = feederData.value !== undefined ? feederData.value : null;
-            const normalizedStatus = feederValue ? String(feederValue).toLowerCase() : null;
-            const isOnline = normalizedStatus === 'online';
-            updateFeederStatusDisplay(isOnline);
-            
-            // Mirror initial status to RTDB
-            const deviceId = uid; // Using UID as deviceId - adjust if needed
-            await mirrorFeederStatusToRTDB(deviceId, isOnline);
-            
-            console.log('Feeder status loaded:', normalizedStatus);
-        } else {
-            console.warn('Feeder sensor document not found');
             updateFeederStatusDisplay(null);
+            updateMotorToggleButton(null);
         }
         
         // Also update the key metrics section
         updateKeyMetrics();
         
     } catch (error) {
-        console.error('Error loading sensor data:', error);
+        console.error('Error loading sensor data from RTDB:', error);
         // Set default values on error
         updateSensorDisplay('temperature', '--', '°C');
         updateSensorDisplay('ph', '--', '');
+        updateFeederStatusDisplay(null);
+        updateMotorToggleButton(null);
     }
 }
 
@@ -1036,92 +1361,1711 @@ function updateKeyMetrics() {
     // Currently handled by updateSensorDisplay
 }
 
-// Set up real-time sensor updates using Firestore listeners
-function setupSensorRealtimeUpdates() {
+// Record RTDB sensor data to Firestore for analytics and historical tracking
+// This function writes sensor readings to hourly records whenever RTDB data changes
+async function recordSensorDataToFirestore(uid, temperature, ph) {
+    // HARD DISABLED - Quota-safe mode: Only writeHourlyFromRTDB() writes hourly data
+    console.warn('[HOURLY WRITE] recordSensorDataToFirestore DISABLED (quota-safe mode)');
+    return;
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
-        if (!uid) {
-            console.warn('No user UID found, cannot set up real-time updates');
+        // Skip if both values are missing/invalid
+        if (temperature === null && ph === null) {
             return;
         }
         
-        console.log('Setting up real-time sensor updates for user:', uid);
+        const now = new Date();
+        const dateStr = formatDateString(now);
+        const hourStr = String(now.getHours()).padStart(2, '0');
         
-        // Set up real-time listener for temperature
-        const tempRef = doc(db, `users/${uid}/sensors/temperature`);
-        const unsubscribeTemp = onSnapshot(tempRef, (snapshot) => {
-            if (snapshot.exists()) {
-                const data = snapshot.data();
-                const value = data.value !== undefined ? data.value : '--';
-                updateSensorDisplay('temperature', value, '°C');
-                console.log('Temperature updated (real-time):', value);
+        // Use transaction to atomically update hourly record
+        const hourRef = doc(db, `users/${uid}/hourlyRecords/${dateStr}/hours/${hourStr}`);
+        
+        await runTransaction(db, async (transaction) => {
+            const hourSnap = await transaction.get(hourRef);
+            
+            if (!hourSnap.exists()) {
+                // Create new hour document
+                const newHour = {
+                    hour: hourStr,
+                    temperatureSum: temperature !== null ? temperature : 0,
+                    temperatureCount: temperature !== null ? 1 : 0,
+                    temperatureAvg: temperature !== null ? temperature : null,
+                    phSum: ph !== null ? ph : 0,
+                    phCount: ph !== null ? 1 : 0,
+                    phAvg: ph !== null ? ph : null,
+                    isSeed: false,
+                    source: "rtdb",
+                    updatedAt: serverTimestamp()
+                };
+                transaction.set(hourRef, newHour);
             } else {
-                updateSensorDisplay('temperature', '--', '°C');
-            }
-        }, (error) => {
-            console.error('Error in temperature real-time listener:', error);
-        });
-        
-        // Set up real-time listener for pH
-        const phRef = doc(db, `users/${uid}/sensors/ph`);
-        const unsubscribePh = onSnapshot(phRef, (snapshot) => {
-            if (snapshot.exists()) {
-                const data = snapshot.data();
-                const value = data.value !== undefined ? data.value : '--';
-                updateSensorDisplay('ph', value, '');
-                console.log('pH updated (real-time):', value);
-            } else {
-                updateSensorDisplay('ph', '--', '');
-            }
-        }, (error) => {
-            console.error('Error in pH real-time listener:', error);
-        });
-        
-        // Set up real-time listener for feeder status
-        const feederRef = doc(db, `users/${uid}/sensors/feeder`);
-        const unsubscribeFeeder = onSnapshot(feederRef, async (snapshot) => {
-            try {
-                if (snapshot.exists()) {
-                    const data = snapshot.data();
-                    const value = data.value !== undefined ? data.value : null;
-                    
-                    // Normalize value to lowercase for consistency
-                    const normalizedStatus = value ? String(value).toLowerCase() : null;
-                    const isOnline = normalizedStatus === 'online';
-                    
-                    // Update UI immediately
-                    updateFeederStatusDisplay(isOnline);
-                    
-                    // Mirror to RTDB (use UID as deviceId - adjust if you have a different deviceId mapping)
-                    const deviceId = uid; // Using UID as deviceId - change if you have a device collection mapping
-                    await mirrorFeederStatusToRTDB(deviceId, isOnline);
-                    
-                    console.log('Feeder status updated (real-time):', normalizedStatus);
-                } else {
-                    updateFeederStatusDisplay(null);
-                    console.warn('Feeder sensor document not found');
+                // Update existing hour document - aggregate new readings
+                const hourData = hourSnap.data();
+                const currentTempSum = hourData.temperatureSum || 0;
+                const currentTempCount = hourData.temperatureCount || 0;
+                const currentPhSum = hourData.phSum || 0;
+                const currentPhCount = hourData.phCount || 0;
+                
+                let newTempSum = currentTempSum;
+                let newTempCount = currentTempCount;
+                let newPhSum = currentPhSum;
+                let newPhCount = currentPhCount;
+                
+                if (temperature !== null) {
+                    newTempSum = currentTempSum + temperature;
+                    newTempCount = currentTempCount + 1;
                 }
-            } catch (error) {
-                console.error('Error processing feeder status update:', error);
+                
+                if (ph !== null) {
+                    newPhSum = currentPhSum + ph;
+                    newPhCount = currentPhCount + 1;
+                }
+                
+                const newTempAvg = newTempCount > 0 ? newTempSum / newTempCount : null;
+                const newPhAvg = newPhCount > 0 ? newPhSum / newPhCount : null;
+                
+                transaction.update(hourRef, {
+                    temperatureSum: newTempSum,
+                    temperatureCount: newTempCount,
+                    temperatureAvg: newTempAvg,
+                    phSum: newPhSum,
+                    phCount: newPhCount,
+                    phAvg: newPhAvg,
+                    isSeed: false,
+                    source: "rtdb",
+                    updatedAt: serverTimestamp()
+                });
             }
-        }, (error) => {
-            console.error('Error in feeder real-time listener:', error);
         });
         
-        // Store unsubscribe functions for cleanup if needed
-        window.sensorUnsubscribes = {
-            temperature: unsubscribeTemp,
-            ph: unsubscribePh,
-            feeder: unsubscribeFeeder
+        console.log('[RTDB→FIRESTORE] Recorded sensor data to hourly record:', dateStr, hourStr);
+        
+    } catch (error) {
+        console.error('[RTDB→FIRESTORE] Error recording sensor data to Firestore:', error);
+        // Fail silently - don't break UI
+    }
+}
+
+// ============================================================
+// RTDB TO FIRESTORE HOURLY INGESTION
+// ============================================================
+// Reads sensor data from RTDB and writes aggregated hourly records to Firestore
+// This function bridges RTDB (live sensor readings) → Firestore (historical reports)
+// 
+// RTDB Path: /devices/{deviceId}/sensors
+// Firestore Path: users/{uid}/hourlyRecords/{YYYY-MM-DD}/hours/{HH}
+//
+// Usage: Call manually or from a background worker/Cloud Function
+// DO NOT run automatically on dashboard load
+export async function ingestHourlyFromRTDB(uid, deviceId) {
+    try {
+        // 1. Read sensor data from RTDB
+        const rtdbPath = `devices/${deviceId}/sensors`;
+        const sensorsRef = ref(rtdb, rtdbPath);
+        const snapshot = await get(sensorsRef);
+        
+        if (!snapshot.exists()) {
+            console.log('[INGEST] No sensor data found in RTDB at:', rtdbPath);
+            return { success: false, reason: 'no_data' };
+        }
+        
+        const sensorData = snapshot.val();
+        
+        // Extract temperature and pH values
+        const temperature = sensorData.temperature !== undefined && sensorData.temperature !== null 
+            ? parseFloat(sensorData.temperature) 
+            : null;
+        const ph = sensorData.ph !== undefined && sensorData.ph !== null 
+            ? parseFloat(sensorData.ph) 
+            : null;
+        
+        // Skip if both values are missing
+        if (temperature === null && ph === null) {
+            console.log('[INGEST] No valid sensor values (temperature and pH both null)');
+            return { success: false, reason: 'no_values' };
+        }
+        
+        // 2. Determine current date and hour from RTDB timestamp or current time (using LOCAL time)
+        let timestamp = sensorData.timestamp || Date.now() / 1000; // RTDB timestamp is in seconds
+        const tsMs = timestamp * 1000; // Convert to milliseconds
+        const d = new Date(tsMs);
+        
+        // Use local time methods (NOT UTC) to match UI date picker
+        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const hourStr = String(d.getHours()).padStart(2, '0');
+        
+        const writePath = `users/${uid}/hourlyRecords/${dateStr}/hours/${hourStr}`;
+        
+        // Debug log before writing
+        console.log(`[INGEST] tsMs=${tsMs} localDateStr=${dateStr} localHour=${hourStr} writePath=${writePath}`);
+        
+        // 3. Fetch existing Firestore hourly document (if exists)
+        const hourRef = doc(db, writePath);
+        const hourSnap = await getDoc(hourRef);
+        
+        // 4. Calculate aggregated values using sum/count
+        let temperatureSum, temperatureCount, temperatureAvg;
+        let phSum, phCount, phAvg;
+        
+        if (hourSnap.exists()) {
+            // Update existing document - add to existing sums/counts
+            const existing = hourSnap.data();
+            
+            // Temperature aggregation
+            const currentTempSum = existing.temperatureSum || 0;
+            const currentTempCount = existing.temperatureCount || 0;
+            
+            if (temperature !== null) {
+                temperatureSum = currentTempSum + temperature;
+                temperatureCount = currentTempCount + 1;
+                temperatureAvg = temperatureSum / temperatureCount;
+            } else {
+                // Keep existing values if no new temperature reading
+                temperatureSum = currentTempSum;
+                temperatureCount = currentTempCount;
+                temperatureAvg = currentTempCount > 0 ? currentTempSum / currentTempCount : null;
+            }
+            
+            // pH aggregation
+            const currentPhSum = existing.phSum || 0;
+            const currentPhCount = existing.phCount || 0;
+            
+            if (ph !== null) {
+                phSum = currentPhSum + ph;
+                phCount = currentPhCount + 1;
+                phAvg = phSum / phCount;
+            } else {
+                // Keep existing values if no new pH reading
+                phSum = currentPhSum;
+                phCount = currentPhCount;
+                phAvg = currentPhCount > 0 ? currentPhSum / currentPhCount : null;
+            }
+        } else {
+            // Create new document - initialize sums/counts
+            if (temperature !== null) {
+                temperatureSum = temperature;
+                temperatureCount = 1;
+                temperatureAvg = temperature;
+            } else {
+                temperatureSum = 0;
+                temperatureCount = 0;
+                temperatureAvg = null;
+            }
+            
+            if (ph !== null) {
+                phSum = ph;
+                phCount = 1;
+                phAvg = ph;
+            } else {
+                phSum = 0;
+                phCount = 0;
+                phAvg = null;
+            }
+        }
+        
+        // 5. Write to Firestore using merge (updates existing or creates new)
+        const hourlyRecord = {
+            hour: hourStr,
+            temperatureSum: temperatureSum,
+            temperatureCount: temperatureCount,
+            temperatureAvg: temperatureAvg,
+            phSum: phSum,
+            phCount: phCount,
+            phAvg: phAvg,
+            source: "rtdb",
+            isSeed: false,
+            updatedAt: serverTimestamp()
         };
         
-        console.log('Real-time sensor listeners set up successfully');
+        await setDoc(hourRef, hourlyRecord, { merge: true });
+        
+        console.log(`[INGEST] ✅ Wrote hourly record: ${dateStr}/hours/${hourStr}`, {
+            temperature: temperature !== null ? `${temperature}°C (sum: ${temperatureSum}, count: ${temperatureCount}, avg: ${temperatureAvg?.toFixed(2)})` : 'null',
+            ph: ph !== null ? `${ph} (sum: ${phSum}, count: ${phCount}, avg: ${phAvg?.toFixed(2)})` : 'null'
+        });
+        
+        return { 
+            success: true, 
+            date: dateStr, 
+            hour: hourStr,
+            path: writePath,
+            dateStr: dateStr,
+            hourStr: hourStr,
+            writePath: writePath
+        };
+        
+    } catch (error) {
+        console.error('[INGEST] ❌ Error ingesting hourly data from RTDB:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// ============================================================
+// SINGLE HOURLY WRITER (RATE-LIMITED, PREVENTS WRITE STORMS)
+// ============================================================
+// Reads from local state (updated by RTDB listeners)
+// Writes to Firestore at most once per hour
+// This is the ONLY function that writes hourly data in HOURLY_TEST_MODE
+//
+// Firestore Path: users/{uid}/hourlyRecords/{YYYY-MM-DD}/hours/{HH}
+//
+// Usage: Call manually or from controlled interval
+// Example: await writeHourlyFromRTDB(uid);
+//          setInterval(() => writeHourlyFromRTDB(uid), 60000); // Safe - gate prevents duplicates
+export async function writeHourlyFromRTDB(uid) {
+    // Check if we have any sensor values
+    if (latestTemperature === null && latestPH === null) {
+        return { skipped: true, reason: 'no_values' };
+    }
+    
+    // Determine LOCAL date and hour from latest timestamp
+    let ts = latestTimestamp;
+    if (!ts) {
+        ts = Date.now();
+    } else {
+        // Handle timestamp in seconds or milliseconds
+        ts = ts < 1e12 ? ts * 1000 : ts;
+    }
+    
+    const d = new Date(ts);
+    
+    // Use LOCAL time methods (NOT UTC) to match UI date picker
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const hourStr = String(d.getHours()).padStart(2, '0');
+    
+    const hourKey = `${dateStr}-${hourStr}`;
+    
+    // HARD GATE — prevents write storms (at most once per hour)
+    if (lastWrittenHourKey === hourKey) {
+        console.log('[HOURLY WRITE] skipped — already written this hour');
+        return { skipped: true, hourKey: hourKey };
+    }
+    
+    // COOLDOWN THROTTLE — prevents write storms within same minute
+    const nowMs = Date.now();
+    if (LAST_HOURLY_WRITE_KEY === hourKey && (nowMs - LAST_HOURLY_WRITE_AT) < HOURLY_WRITE_COOLDOWN_MS) {
+        console.log('[HOURLY WRITE] Skipped (cooldown active)', { key: hourKey, cooldownMs: HOURLY_WRITE_COOLDOWN_MS });
+        return { success: false, reason: 'cooldown', date: dateStr, hour: hourStr };
+    }
+    
+    // Update gates before writing
+    lastWrittenHourKey = hourKey;
+    LAST_HOURLY_WRITE_KEY = hourKey;
+    LAST_HOURLY_WRITE_AT = nowMs;
+    
+    // Write to Firestore
+    const docRef = doc(db, `users/${uid}/hourlyRecords/${dateStr}/hours/${hourStr}`);
+    
+    await setDoc(
+        docRef,
+        {
+            hour: hourStr,
+            temperatureAvg: latestTemperature,
+            phAvg: latestPH,
+            source: 'rtdb',
+            isSeed: false,
+            updatedAt: serverTimestamp()
+        },
+        { merge: true }
+    );
+    
+    // Log success
+    console.log('[HOURLY WRITE] Wrote', {
+        uid,
+        date: dateStr,
+        hour: hourStr,
+        temperatureAvg: latestTemperature,
+        phAvg: latestPH
+    });
+    
+    return { success: true, date: dateStr, hour: hourStr };
+}
+
+// ============================================================
+// PART 4: DAILY/WEEKLY/MONTHLY ROLLUPS (QUOTA-SAFE, WORKS WITHOUT LOGIN)
+// ============================================================
+// Computes and writes daily/weekly/monthly reports from hourly records
+// Uses runtimeUid from window.RUNTIME_CONTEXT (works without login)
+// Includes throttling and change detection to prevent 429 errors
+
+// Helper: Check if values changed meaningfully (epsilon comparison)
+// Register helper once (outside function to prevent duplicate registration)
+if (!window.__DECLARED_HELPERS__.has('hasSignificantChange')) {
+    registerHelper('hasSignificantChange', 'dashboard.js:1692');
+}
+function hasSignificantChange(oldVal, newVal, epsilon = 0.001) {
+    if (oldVal === null && newVal === null) return false;
+    if (oldVal === null || newVal === null) return true;
+    return Math.abs(oldVal - newVal) >= epsilon;
+}
+
+// Helper: Get ISO week string from date (local time)
+function getISOWeekStringFromDate(date) {
+    return getISOWeekString(date);
+}
+
+// Compute and write daily report from hourly records
+// Firestore path: users/{uid}/dailyReports/{YYYY-MM-DD}
+export async function computeAndWriteDailyReport(uid, dateStr) {
+    if (!uid) {
+        console.warn('[ROLLUP-DAILY] Skipped (no UID)');
+        return { skipped: true, reason: 'no_uid' };
+    }
+    
+    try {
+        // Validate date format
+        if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            console.error('[ROLLUP-DAILY] Invalid date format. Expected YYYY-MM-DD, got:', dateStr);
+            return { success: false, reason: 'invalid_date' };
+        }
+        
+        // Read hourly records for this date
+        const hoursRef = collection(db, `users/${uid}/hourlyRecords/${dateStr}/hours`);
+        const hoursSnapshot = await getDocs(hoursRef);
+        
+        if (hoursSnapshot.empty) {
+            console.log(`[ROLLUP-DAILY] No hourly records found for ${dateStr}`);
+            return { skipped: true, reason: 'no_data' };
+        }
+        
+        // Aggregate hourly records
+        const validHours = [];
+        let temperatureSum = 0;
+        let temperatureCount = 0;
+        let phSum = 0;
+        let phCount = 0;
+        
+        hoursSnapshot.forEach(hourDoc => {
+            const record = hourDoc.data();
+            
+            // Skip seed documents
+            if (record.isSeed === true) {
+                return;
+            }
+            
+            // Include only docs with valid temperatureAvg OR phAvg
+            const hasTemp = record.temperatureAvg !== null && record.temperatureAvg !== undefined && !isNaN(parseFloat(record.temperatureAvg));
+            const hasPh = record.phAvg !== null && record.phAvg !== undefined && !isNaN(parseFloat(record.phAvg));
+            
+            if (!hasTemp && !hasPh) {
+                return; // Skip invalid records
+            }
+            
+            validHours.push(record);
+            
+            if (hasTemp) {
+                temperatureSum += parseFloat(record.temperatureAvg);
+                temperatureCount += 1;
+            }
+            
+            if (hasPh) {
+                phSum += parseFloat(record.phAvg);
+                phCount += 1;
+            }
+        });
+        
+        if (validHours.length === 0) {
+            console.log(`[ROLLUP-DAILY] No valid hourly data for ${dateStr}`);
+            return { skipped: true, reason: 'no_valid_data' };
+        }
+        
+        // Calculate averages
+        const temperatureAvg = temperatureCount > 0 ? temperatureSum / temperatureCount : null;
+        const phAvg = phCount > 0 ? phSum / phCount : null;
+        const hourCount = validHours.length;
+        
+        // Check existing document for change detection
+        const reportRef = doc(db, `users/${uid}/dailyReports/${dateStr}`);
+        const existingSnap = await getDoc(reportRef);
+        
+        if (existingSnap.exists()) {
+            const existing = existingSnap.data();
+            const tempChanged = hasSignificantChange(existing.temperatureAvg, temperatureAvg);
+            const phChanged = hasSignificantChange(existing.phAvg, phAvg);
+            const countChanged = existing.hourCount !== hourCount;
+            
+            if (!tempChanged && !phChanged && !countChanged) {
+                console.log(`[ROLLUP-DAILY] Unchanged, no write for ${dateStr}`);
+                return { skipped: true, reason: 'unchanged', date: dateStr };
+            }
+        }
+        
+        // Write to Firestore
+        const dailyReport = {
+            date: dateStr,
+            temperatureAvg: temperatureAvg,
+            phAvg: phAvg,
+            hourCount: hourCount,
+            source: "derived-from-hourly",
+            updatedAt: serverTimestamp()
+        };
+        
+        await setDoc(reportRef, dailyReport, { merge: true });
+        
+        console.log(`[ROLLUP-DAILY] wrote users/${uid}/dailyReports/${dateStr} hourCount=${hourCount} temp=${temperatureAvg?.toFixed(2) || 'null'} ph=${phAvg?.toFixed(2) || 'null'}`);
+        
+        return { success: true, date: dateStr, hourCount, temperatureAvg, phAvg };
+        
+    } catch (error) {
+        console.error(`[ROLLUP-DAILY] Error computing daily report for ${dateStr}:`, error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Compute and write weekly report from daily reports
+// Firestore path: users/{uid}/weeklyReports/{YYYY-W##}
+export async function computeAndWriteWeeklyReport(uid, weekKey) {
+    if (!uid) {
+        console.warn('[ROLLUP-WEEKLY] Skipped (no UID)');
+        return { skipped: true, reason: 'no_uid' };
+    }
+    
+    try {
+        // Validate ISO week format (YYYY-W##)
+        if (!weekKey || !/^\d{4}-W\d{2}$/.test(weekKey)) {
+            console.error('[ROLLUP-WEEKLY] Invalid week format. Expected YYYY-W##, got:', weekKey);
+            return { success: false, reason: 'invalid_week' };
+        }
+        
+        // Parse ISO week to get date range
+        const match = weekKey.match(/(\d{4})-W(\d{2})/);
+        if (!match) {
+            console.error('[ROLLUP-WEEKLY] Failed to parse ISO week:', weekKey);
+            return { success: false, reason: 'parse_error' };
+        }
+        
+        const year = parseInt(match[1]);
+        const week = parseInt(match[2]);
+        
+        // Calculate Monday of the ISO week
+        const jan4 = new Date(year, 0, 4);
+        const jan4Day = jan4.getDay();
+        const jan4Monday = new Date(jan4);
+        jan4Monday.setDate(4 - (jan4Day === 0 ? 6 : jan4Day - 1));
+        
+        const weekStart = new Date(jan4Monday);
+        weekStart.setDate(jan4Monday.getDate() + (week - 1) * 7);
+        
+        // Get all 7 dates in the week
+        const dailyDates = [];
+        for (let i = 0; i < 7; i++) {
+            const day = new Date(weekStart);
+            day.setDate(weekStart.getDate() + i);
+            const dateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+            dailyDates.push(dateStr);
+        }
+        
+        // Read all daily reports
+        const dailyReportsRef = collection(db, `users/${uid}/dailyReports`);
+        const dailyReportsSnapshot = await getDocs(dailyReportsRef);
+        
+        // Filter daily reports that belong to this week
+        const weekDailyReports = [];
+        dailyReportsSnapshot.forEach(doc => {
+            const report = doc.data();
+            const reportDate = report.date;
+            
+            // Skip seed documents
+            if (report.isSeed === true) {
+                return;
+            }
+            
+            // Check if this daily report belongs to the week
+            if (reportDate && dailyDates.includes(reportDate)) {
+                weekDailyReports.push(report);
+            }
+        });
+        
+        if (weekDailyReports.length === 0) {
+            console.log(`[ROLLUP-WEEKLY] No daily reports found for week ${weekKey}`);
+            return { skipped: true, reason: 'no_data' };
+        }
+        
+        // Aggregate from daily reports
+        let temperatureSum = 0;
+        let temperatureCount = 0;
+        let phSum = 0;
+        let phCount = 0;
+        
+        weekDailyReports.forEach(report => {
+            if (report.temperatureAvg !== null && report.temperatureAvg !== undefined) {
+                const tempValue = parseFloat(report.temperatureAvg);
+                if (!isNaN(tempValue)) {
+                    temperatureSum += tempValue;
+                    temperatureCount += 1;
+                }
+            }
+            
+            if (report.phAvg !== null && report.phAvg !== undefined) {
+                const phValue = parseFloat(report.phAvg);
+                if (!isNaN(phValue)) {
+                    phSum += phValue;
+                    phCount += 1;
+                }
+            }
+        });
+        
+        // Calculate averages
+        const temperatureAvg = temperatureCount > 0 ? temperatureSum / temperatureCount : null;
+        const phAvg = phCount > 0 ? phSum / phCount : null;
+        const dayCount = weekDailyReports.length;
+        
+        // Check existing document for change detection
+        const reportRef = doc(db, `users/${uid}/weeklyReports/${weekKey}`);
+        const existingSnap = await getDoc(reportRef);
+        
+        if (existingSnap.exists()) {
+            const existing = existingSnap.data();
+            const tempChanged = hasSignificantChange(existing.temperatureAvg, temperatureAvg);
+            const phChanged = hasSignificantChange(existing.phAvg, phAvg);
+            const countChanged = existing.dayCount !== dayCount;
+            
+            if (!tempChanged && !phChanged && !countChanged) {
+                console.log(`[ROLLUP-WEEKLY] Unchanged, no write for ${weekKey}`);
+                return { skipped: true, reason: 'unchanged', week: weekKey };
+            }
+        }
+        
+        // Write to Firestore
+        const weeklyReport = {
+            week: weekKey,
+            temperatureAvg: temperatureAvg,
+            phAvg: phAvg,
+            dayCount: dayCount,
+            source: "derived-from-daily",
+            updatedAt: serverTimestamp()
+        };
+        
+        await setDoc(reportRef, weeklyReport, { merge: true });
+        
+        console.log(`[ROLLUP-WEEKLY] wrote users/${uid}/weeklyReports/${weekKey} dayCount=${dayCount} temp=${temperatureAvg?.toFixed(2) || 'null'} ph=${phAvg?.toFixed(2) || 'null'}`);
+        
+        return { success: true, week: weekKey, dayCount, temperatureAvg, phAvg };
+        
+    } catch (error) {
+        console.error(`[ROLLUP-WEEKLY] Error computing weekly report for ${weekKey}:`, error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Compute and write monthly report from daily reports
+// Firestore path: users/{uid}/monthlyReports/{YYYY-MM}
+export async function computeAndWriteMonthlyReport(uid, monthKey) {
+    if (!uid) {
+        console.warn('[ROLLUP-MONTHLY] Skipped (no UID)');
+        return { skipped: true, reason: 'no_uid' };
+    }
+    
+    try {
+        // Validate month format (YYYY-MM)
+        if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) {
+            console.error('[ROLLUP-MONTHLY] Invalid month format. Expected YYYY-MM, got:', monthKey);
+            return { success: false, reason: 'invalid_month' };
+        }
+        
+        // Read all daily reports
+        const dailyReportsRef = collection(db, `users/${uid}/dailyReports`);
+        const dailyReportsSnapshot = await getDocs(dailyReportsRef);
+        
+        // Filter daily reports that belong to this month
+        const monthDailyReports = [];
+        dailyReportsSnapshot.forEach(doc => {
+            const report = doc.data();
+            const reportDate = report.date;
+            
+            // Skip seed documents
+            if (report.isSeed === true) {
+                return;
+            }
+            
+            // Check if this daily report belongs to the month
+            if (reportDate && reportDate.startsWith(monthKey)) {
+                monthDailyReports.push(report);
+            }
+        });
+        
+        if (monthDailyReports.length === 0) {
+            console.log(`[ROLLUP-MONTHLY] No daily reports found for month ${monthKey}`);
+            return { skipped: true, reason: 'no_data' };
+        }
+        
+        // Aggregate from daily reports
+        let temperatureSum = 0;
+        let temperatureCount = 0;
+        let phSum = 0;
+        let phCount = 0;
+        
+        monthDailyReports.forEach(report => {
+            if (report.temperatureAvg !== null && report.temperatureAvg !== undefined) {
+                const tempValue = parseFloat(report.temperatureAvg);
+                if (!isNaN(tempValue)) {
+                    temperatureSum += tempValue;
+                    temperatureCount += 1;
+                }
+            }
+            
+            if (report.phAvg !== null && report.phAvg !== undefined) {
+                const phValue = parseFloat(report.phAvg);
+                if (!isNaN(phValue)) {
+                    phSum += phValue;
+                    phCount += 1;
+                }
+            }
+        });
+        
+        // Calculate averages
+        const temperatureAvg = temperatureCount > 0 ? temperatureSum / temperatureCount : null;
+        const phAvg = phCount > 0 ? phSum / phCount : null;
+        const dayCount = monthDailyReports.length;
+        
+        // Check existing document for change detection
+        const reportRef = doc(db, `users/${uid}/monthlyReports/${monthKey}`);
+        const existingSnap = await getDoc(reportRef);
+        
+        if (existingSnap.exists()) {
+            const existing = existingSnap.data();
+            const tempChanged = hasSignificantChange(existing.temperatureAvg, temperatureAvg);
+            const phChanged = hasSignificantChange(existing.phAvg, phAvg);
+            const countChanged = existing.dayCount !== dayCount;
+            
+            if (!tempChanged && !phChanged && !countChanged) {
+                console.log(`[ROLLUP-MONTHLY] Unchanged, no write for ${monthKey}`);
+                return { skipped: true, reason: 'unchanged', month: monthKey };
+            }
+        }
+        
+        // Write to Firestore
+        const monthlyReport = {
+            month: monthKey,
+            temperatureAvg: temperatureAvg,
+            phAvg: phAvg,
+            dayCount: dayCount,
+            source: "derived-from-daily",
+            updatedAt: serverTimestamp()
+        };
+        
+        await setDoc(reportRef, monthlyReport, { merge: true });
+        
+        console.log(`[ROLLUP-MONTHLY] wrote users/${uid}/monthlyReports/${monthKey} dayCount=${dayCount} temp=${temperatureAvg?.toFixed(2) || 'null'} ph=${phAvg?.toFixed(2) || 'null'}`);
+        
+        return { success: true, month: monthKey, dayCount, temperatureAvg, phAvg };
+        
+    } catch (error) {
+        console.error(`[ROLLUP-MONTHLY] Error computing monthly report for ${monthKey}:`, error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Run rollups for current context (resolves UID from runtime context)
+// Computes current date/week/month keys using LOCAL TIME
+// Runs rollups under throttling rules
+export async function runRollupsForCurrentContext() {
+    try {
+        // Resolve UID from runtime context (works without login)
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+        
+        if (!uid) {
+            console.log('[CORE] rollup skipped (no runtime UID)');
+            return { skipped: true, reason: 'no_uid' };
+        }
+        
+        const now = new Date(); // LOCAL TIME
+        const nowMs = Date.now();
+        
+        // Compute current date/week/month keys (LOCAL TIME)
+        const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const weekKey = getISOWeekStringFromDate(now);
+        const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        
+        const results = {
+            daily: null,
+            weekly: null,
+            monthly: null
+        };
+        
+        // Daily rollup (throttled: 5 minutes)
+        if ((nowMs - LAST_ROLLUP_AT.daily) >= ROLLUP_COOLDOWN.daily) {
+            results.daily = await computeAndWriteDailyReport(uid, dateStr);
+            if (results.daily.success) {
+                LAST_ROLLUP_AT.daily = nowMs;
+            }
+        } else {
+            console.log('[ROLLUP-DAILY] skipped (cooldown)');
+            results.daily = { skipped: true, reason: 'cooldown' };
+        }
+        
+        // Weekly rollup (throttled: 1 hour)
+        if ((nowMs - LAST_ROLLUP_AT.weekly) >= ROLLUP_COOLDOWN.weekly) {
+            results.weekly = await computeAndWriteWeeklyReport(uid, weekKey);
+            if (results.weekly.success) {
+                LAST_ROLLUP_AT.weekly = nowMs;
+            }
+        } else {
+            console.log('[ROLLUP-WEEKLY] skipped (cooldown)');
+            results.weekly = { skipped: true, reason: 'cooldown' };
+        }
+        
+        // Monthly rollup (throttled: 1 hour)
+        if ((nowMs - LAST_ROLLUP_AT.monthly) >= ROLLUP_COOLDOWN.monthly) {
+            results.monthly = await computeAndWriteMonthlyReport(uid, monthKey);
+            if (results.monthly.success) {
+                LAST_ROLLUP_AT.monthly = nowMs;
+            }
+        } else {
+            console.log('[ROLLUP-MONTHLY] skipped (cooldown)');
+            results.monthly = { skipped: true, reason: 'cooldown' };
+        }
+        
+        return results;
+        
+    } catch (error) {
+        console.error('[ROLLUP] Error running rollups:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// ============================================================
+// FIRESTORE HOURLY REPORT FETCH (READ-ONLY)
+// ============================================================
+// Fetches hourly report data from Firestore
+// This is a read-only function - no writes, no side effects
+//
+// Firestore Path: users/{uid}/hourlyRecords/{YYYY-MM-DD}/hours
+//
+// Usage: Call manually or from existing report loaders
+// Example: const reports = await fetchHourlyReport(uid, "2026-01-22");
+export async function fetchHourlyReport(uid, dateStr) {
+    try {
+        // Validate inputs
+        if (!uid) {
+            console.error('[FETCH-HOURLY] No user ID provided');
+            return [];
+        }
+        
+        if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            console.error('[FETCH-HOURLY] Invalid date format. Expected YYYY-MM-DD, got:', dateStr);
+            return [];
+        }
+        
+        // Read from Firestore
+        const firestorePath = `users/${uid}/hourlyRecords/${dateStr}/hours`;
+        const hoursRef = collection(db, firestorePath);
+        
+        // Query with orderBy to get hours in ascending order
+        let hoursSnapshot;
+        try {
+            const q = query(hoursRef, orderBy('hour', 'asc'));
+            hoursSnapshot = await getDocs(q);
+        } catch (error) {
+            // If orderBy fails (field doesn't exist), query without it
+            console.warn('[FETCH-HOURLY] orderBy failed, querying without orderBy:', error);
+            hoursSnapshot = await getDocs(hoursRef);
+        }
+        
+        // Process documents into normalized array
+        const reports = [];
+        hoursSnapshot.forEach(doc => {
+            const data = doc.data();
+            
+            // Normalize data with safe fallbacks
+            const report = {
+                hour: data.hour || doc.id,  // Fallback to doc.id if hour field missing
+                temperatureAvg: data.temperatureAvg !== undefined && data.temperatureAvg !== null 
+                    ? parseFloat(data.temperatureAvg) 
+                    : null,
+                phAvg: data.phAvg !== undefined && data.phAvg !== null 
+                    ? parseFloat(data.phAvg) 
+                    : null,
+                source: data.source || null,
+                updatedAt: data.updatedAt || null
+            };
+            
+            reports.push(report);
+        });
+        
+        // Sort by hour ascending (client-side, in case orderBy failed)
+        reports.sort((a, b) => {
+            const hourA = parseInt(a.hour || '0', 10);
+            const hourB = parseInt(b.hour || '0', 10);
+            return hourA - hourB;
+        });
+        
+        // Log clearly
+        console.log(`[FETCH-HOURLY] uid=${uid} date=${dateStr} rows=${reports.length}`);
+        
+        return reports;
+        
+    } catch (error) {
+        console.error('[FETCH-HOURLY] ❌ Error fetching hourly report:', error);
+        return [];
+    }
+}
+
+// ============================================================
+// COMPUTE DAILY, WEEKLY, AND MONTHLY REPORTS FROM HOURLY
+// ============================================================
+
+// Compute daily report from hourly records
+// Reads from: users/{uid}/hourlyRecords/{YYYY-MM-DD}/hours
+// Writes to: users/{uid}/dailyReports/{YYYY-MM-DD}
+export async function computeDailyReport(uid, dateStr) {
+    try {
+        // Validate date format
+        if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            console.error('[DAILY COMPUTE] Invalid date format. Expected YYYY-MM-DD, got:', dateStr);
+            return null;
+        }
+        
+        // Read hourly records for this date
+        const hoursRef = collection(db, `users/${uid}/hourlyRecords/${dateStr}/hours`);
+        const hoursSnapshot = await getDocs(hoursRef);
+        
+        if (hoursSnapshot.empty) {
+            console.log(`[DAILY COMPUTE] No hourly records found for ${dateStr}`);
+            return null;
+        }
+        
+        // Aggregate using weighted averages (sum/count)
+        let temperatureSum = 0;
+        let temperatureCount = 0;
+        let phSum = 0;
+        let phCount = 0;
+        let coverageHours = 0;
+        
+        hoursSnapshot.forEach(hourDoc => {
+            const record = hourDoc.data();
+            
+            // Skip seed documents
+            if (record.isSeed === true) {
+                return;
+            }
+            
+            // Process temperature (each hourly record counts as 1)
+            if (record.temperatureAvg !== null && record.temperatureAvg !== undefined) {
+                const tempValue = parseFloat(record.temperatureAvg);
+                if (!isNaN(tempValue)) {
+                    temperatureSum += tempValue;
+                    temperatureCount += 1;
+                }
+            }
+            
+            // Process pH (each hourly record counts as 1)
+            if (record.phAvg !== null && record.phAvg !== undefined) {
+                const phValue = parseFloat(record.phAvg);
+                if (!isNaN(phValue)) {
+                    phSum += phValue;
+                    phCount += 1;
+                }
+            }
+            
+            // Count hours with at least one valid reading
+            if ((record.temperatureAvg !== null && record.temperatureAvg !== undefined) ||
+                (record.phAvg !== null && record.phAvg !== undefined)) {
+                coverageHours += 1;
+            }
+        });
+        
+        // If no valid data, return null
+        if (coverageHours === 0) {
+            console.log(`[DAILY COMPUTE] No valid hourly data for ${dateStr}`);
+            return null;
+        }
+        
+        // Calculate weighted averages
+        const avgTemperature = temperatureCount > 0 ? temperatureSum / temperatureCount : null;
+        const avgPh = phCount > 0 ? phSum / phCount : null;
+        
+        // Write to Firestore
+        const reportRef = doc(db, `users/${uid}/dailyReports/${dateStr}`);
+        const dailyReport = {
+            date: dateStr,
+            avgTemperature: avgTemperature,
+            avgPh: avgPh,
+            coverageHours: coverageHours,
+            source: "computed",
+            isSeed: false,
+            updatedAt: serverTimestamp()
+        };
+        
+        await setDoc(reportRef, dailyReport, { merge: true });
+        
+        // Log clearly
+        console.log(`[DAILY COMPUTE] uid=${uid} date=${dateStr} hours=${coverageHours} avgTemp=${avgTemperature?.toFixed(2) || 'null'} avgPh=${avgPh?.toFixed(2) || 'null'}`);
+        
+        return dailyReport;
+        
+    } catch (error) {
+        console.error(`[DAILY COMPUTE] ❌ Error computing daily report for ${dateStr}:`, error);
+        return null;
+    }
+}
+
+// Compute weekly report from daily reports
+// Reads from: users/{uid}/dailyReports/{YYYY-MM-DD}
+// Writes to: users/{uid}/weeklyReports/{YYYY-WW}
+export async function computeWeeklyReport(uid, isoWeekStr) {
+    try {
+        // Validate ISO week format (YYYY-WW)
+        if (!isoWeekStr || !/^\d{4}-W\d{2}$/.test(isoWeekStr)) {
+            console.error('[WEEKLY COMPUTE] Invalid ISO week format. Expected YYYY-WW, got:', isoWeekStr);
+            return null;
+        }
+        
+        // Parse ISO week to get date range
+        const match = isoWeekStr.match(/(\d{4})-W(\d{2})/);
+        if (!match) {
+            console.error('[WEEKLY COMPUTE] Failed to parse ISO week:', isoWeekStr);
+            return null;
+        }
+        
+        const year = parseInt(match[1]);
+        const week = parseInt(match[2]);
+        
+        // Calculate Monday of the ISO week (simplified - assumes week 1 starts Jan 4)
+        const jan4 = new Date(year, 0, 4);
+        const jan4Day = jan4.getDay();
+        const jan4Monday = new Date(jan4);
+        jan4Monday.setDate(4 - (jan4Day === 0 ? 6 : jan4Day - 1));
+        
+        const weekStart = new Date(jan4Monday);
+        weekStart.setDate(jan4Monday.getDate() + (week - 1) * 7);
+        
+        // Get all 7 days of the week
+        const dailyDates = [];
+        for (let i = 0; i < 7; i++) {
+            const day = new Date(weekStart);
+            day.setDate(weekStart.getDate() + i);
+            const dateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+            dailyDates.push(dateStr);
+        }
+        
+        // Read all daily reports for this week
+        const dailyReportsRef = collection(db, `users/${uid}/dailyReports`);
+        const dailyReportsSnapshot = await getDocs(dailyReportsRef);
+        
+        // Filter daily reports that belong to this week
+        const weekDailyReports = [];
+        dailyReportsSnapshot.forEach(doc => {
+            const report = doc.data();
+            const reportDate = report.date;
+            
+            // Skip seed documents
+            if (report.isSeed === true) {
+                return;
+            }
+            
+            // Check if this daily report belongs to the week
+            if (reportDate && dailyDates.includes(reportDate)) {
+                weekDailyReports.push(report);
+            }
+        });
+        
+        if (weekDailyReports.length === 0) {
+            console.log(`[WEEKLY COMPUTE] No daily reports found for week ${isoWeekStr}`);
+            return null;
+        }
+        
+        // Aggregate using weighted averages (sum/count)
+        let temperatureSum = 0;
+        let temperatureCount = 0;
+        let phSum = 0;
+        let phCount = 0;
+        
+        weekDailyReports.forEach(report => {
+            // Each daily report counts as 1 (weighted by coverageHours if needed, but simplified)
+            if (report.avgTemperature !== null && report.avgTemperature !== undefined) {
+                const tempValue = parseFloat(report.avgTemperature);
+                if (!isNaN(tempValue)) {
+                    temperatureSum += tempValue;
+                    temperatureCount += 1;
+                }
+            }
+            
+            if (report.avgPh !== null && report.avgPh !== undefined) {
+                const phValue = parseFloat(report.avgPh);
+                if (!isNaN(phValue)) {
+                    phSum += phValue;
+                    phCount += 1;
+                }
+            }
+        });
+        
+        // Calculate weighted averages
+        const avgTemperature = temperatureCount > 0 ? temperatureSum / temperatureCount : null;
+        const avgPh = phCount > 0 ? phSum / phCount : null;
+        const coverageDays = weekDailyReports.length;
+        
+        // Write to Firestore
+        const reportRef = doc(db, `users/${uid}/weeklyReports/${isoWeekStr}`);
+        const weeklyReport = {
+            week: isoWeekStr,
+            avgTemperature: avgTemperature,
+            avgPh: avgPh,
+            coverageDays: coverageDays,
+            source: "computed",
+            isSeed: false,
+            updatedAt: serverTimestamp()
+        };
+        
+        await setDoc(reportRef, weeklyReport, { merge: true });
+        
+        // Log clearly
+        console.log(`[WEEKLY COMPUTE] uid=${uid} week=${isoWeekStr} days=${coverageDays} avgTemp=${avgTemperature?.toFixed(2) || 'null'} avgPh=${avgPh?.toFixed(2) || 'null'}`);
+        
+        return weeklyReport;
+        
+    } catch (error) {
+        console.error(`[WEEKLY COMPUTE] ❌ Error computing weekly report for ${isoWeekStr}:`, error);
+        return null;
+    }
+}
+
+// Compute monthly report from daily reports
+// Reads from: users/{uid}/dailyReports/{YYYY-MM-DD}
+// Writes to: users/{uid}/monthlyReports/{YYYY-MM}
+export async function computeMonthlyReport(uid, monthStr) {
+    try {
+        // Validate month format (YYYY-MM)
+        if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) {
+            console.error('[MONTHLY COMPUTE] Invalid month format. Expected YYYY-MM, got:', monthStr);
+            return null;
+        }
+        
+        // Parse month
+        const [year, month] = monthStr.split('-').map(Number);
+        const monthStart = new Date(year, month - 1, 1);
+        const monthEnd = new Date(year, month, 0); // Last day of month
+        
+        // Read all daily reports
+        const dailyReportsRef = collection(db, `users/${uid}/dailyReports`);
+        const dailyReportsSnapshot = await getDocs(dailyReportsRef);
+        
+        // Filter daily reports that belong to this month
+        const monthDailyReports = [];
+        dailyReportsSnapshot.forEach(doc => {
+            const report = doc.data();
+            const reportDate = report.date;
+            
+            // Skip seed documents
+            if (report.isSeed === true) {
+                return;
+            }
+            
+            // Check if this daily report belongs to the month
+            if (reportDate && reportDate.startsWith(monthStr)) {
+                monthDailyReports.push(report);
+            }
+        });
+        
+        if (monthDailyReports.length === 0) {
+            console.log(`[MONTHLY COMPUTE] No daily reports found for month ${monthStr}`);
+            return null;
+        }
+        
+        // Aggregate using weighted averages (sum/count)
+        let temperatureSum = 0;
+        let temperatureCount = 0;
+        let phSum = 0;
+        let phCount = 0;
+        
+        monthDailyReports.forEach(report => {
+            // Each daily report counts as 1
+            if (report.avgTemperature !== null && report.avgTemperature !== undefined) {
+                const tempValue = parseFloat(report.avgTemperature);
+                if (!isNaN(tempValue)) {
+                    temperatureSum += tempValue;
+                    temperatureCount += 1;
+                }
+            }
+            
+            if (report.avgPh !== null && report.avgPh !== undefined) {
+                const phValue = parseFloat(report.avgPh);
+                if (!isNaN(phValue)) {
+                    phSum += phValue;
+                    phCount += 1;
+                }
+            }
+        });
+        
+        // Calculate weighted averages
+        const avgTemperature = temperatureCount > 0 ? temperatureSum / temperatureCount : null;
+        const avgPh = phCount > 0 ? phSum / phCount : null;
+        const coverageDays = monthDailyReports.length;
+        
+        // Write to Firestore
+        const reportRef = doc(db, `users/${uid}/monthlyReports/${monthStr}`);
+        const monthlyReport = {
+            month: monthStr,
+            avgTemperature: avgTemperature,
+            avgPh: avgPh,
+            coverageDays: coverageDays,
+            source: "computed",
+            isSeed: false,
+            updatedAt: serverTimestamp()
+        };
+        
+        await setDoc(reportRef, monthlyReport, { merge: true });
+        
+        // Log clearly
+        console.log(`[MONTHLY COMPUTE] uid=${uid} month=${monthStr} days=${coverageDays} avgTemp=${avgTemperature?.toFixed(2) || 'null'} avgPh=${avgPh?.toFixed(2) || 'null'}`);
+        
+        return monthlyReport;
+        
+    } catch (error) {
+        console.error(`[MONTHLY COMPUTE] ❌ Error computing monthly report for ${monthStr}:`, error);
+        return null;
+    }
+}
+
+// ============================================================
+// RTDB TO FIRESTORE LIVE HOURLY INGESTION (TESTING)
+// ============================================================
+// Sets up an RTDB listener that writes EVERY sensor update to Firestore
+// This is for testing only - writes on every RTDB update without debouncing
+//
+// RTDB Path: /devices/{deviceId}/sensors
+// Firestore Path: users/{uid}/hourlyRecords/{YYYY-MM-DD}/hours/{HH}
+//
+// Usage: Call manually to start ingestion
+// Returns cleanup function to stop the listener
+// Example: const cleanup = ingestHourlyFromRTDBLive(uid, deviceId);
+//          cleanup(); // Stop listening
+export function ingestHourlyFromRTDBLive(uid, deviceId) {
+    if (HOURLY_TEST_MODE) {
+        console.log('[INGEST-LIVE] Disabled in HOURLY_TEST_MODE - use writeHourlyFromRTDB() instead');
+        return () => {}; // Return no-op cleanup function
+    }
+    // RTDB read path
+    const rtdbPath = `devices/${deviceId}/sensors`;
+    const sensorsRef = ref(rtdb, rtdbPath);
+    
+    console.log('[INGEST-LIVE] Starting live RTDB→Firestore ingestion:', rtdbPath);
+    
+    // Set up onValue listener - fires on every RTDB update
+    const unsubscribe = onValue(sensorsRef, async (snapshot) => {
+        try {
+            if (!snapshot.exists()) {
+                console.log('[INGEST-LIVE] No sensor data in RTDB');
+                return;
+            }
+            
+            const sensorData = snapshot.val();
+            
+            // Extract temperature and pH values
+            const temperature = sensorData.temperature !== undefined && sensorData.temperature !== null 
+                ? parseFloat(sensorData.temperature) 
+                : null;
+            const ph = sensorData.ph !== undefined && sensorData.ph !== null 
+                ? parseFloat(sensorData.ph) 
+                : null;
+            
+            // Skip if both values are missing
+            if (temperature === null && ph === null) {
+                console.log('[INGEST-LIVE] Skipping: no valid sensor values');
+                return;
+            }
+            
+            // Determine current date and hour from RTDB timestamp or current time (using LOCAL time)
+            let timestamp = sensorData.timestamp || Date.now() / 1000; // RTDB timestamp is in seconds
+            const tsMs = timestamp * 1000; // Convert to milliseconds
+            const d = new Date(tsMs);
+            
+            // Use local time methods (NOT UTC) to match UI date picker
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const hourStr = String(d.getHours()).padStart(2, '0');
+            
+            const writePath = `users/${uid}/hourlyRecords/${dateStr}/hours/${hourStr}`;
+            
+            // Debug log before writing
+            console.log(`[INGEST] tsMs=${tsMs} localDateStr=${dateStr} localHour=${hourStr} writePath=${writePath}`);
+            
+            // Fetch existing Firestore hourly document (if exists)
+            const hourRef = doc(db, writePath);
+            const hourSnap = await getDoc(hourRef);
+            
+            // Calculate aggregated values using sum/count
+            let temperatureSum, temperatureCount, temperatureAvg;
+            let phSum, phCount, phAvg;
+            
+            if (hourSnap.exists()) {
+                // Update existing document - add to existing sums/counts
+                const existing = hourSnap.data();
+                
+                // Temperature aggregation
+                const currentTempSum = existing.temperatureSum || 0;
+                const currentTempCount = existing.temperatureCount || 0;
+                
+                if (temperature !== null) {
+                    temperatureSum = currentTempSum + temperature;
+                    temperatureCount = currentTempCount + 1;
+                    temperatureAvg = temperatureSum / temperatureCount;
+                } else {
+                    // Keep existing values if no new temperature reading
+                    temperatureSum = currentTempSum;
+                    temperatureCount = currentTempCount;
+                    temperatureAvg = currentTempCount > 0 ? currentTempSum / currentTempCount : null;
+                }
+                
+                // pH aggregation
+                const currentPhSum = existing.phSum || 0;
+                const currentPhCount = existing.phCount || 0;
+                
+                if (ph !== null) {
+                    phSum = currentPhSum + ph;
+                    phCount = currentPhCount + 1;
+                    phAvg = phSum / phCount;
+                } else {
+                    // Keep existing values if no new pH reading
+                    phSum = currentPhSum;
+                    phCount = currentPhCount;
+                    phAvg = currentPhCount > 0 ? currentPhSum / currentPhCount : null;
+                }
+            } else {
+                // Create new document - initialize sums/counts
+                if (temperature !== null) {
+                    temperatureSum = temperature;
+                    temperatureCount = 1;
+                    temperatureAvg = temperature;
+                } else {
+                    temperatureSum = 0;
+                    temperatureCount = 0;
+                    temperatureAvg = null;
+                }
+                
+                if (ph !== null) {
+                    phSum = ph;
+                    phCount = 1;
+                    phAvg = ph;
+                } else {
+                    phSum = 0;
+                    phCount = 0;
+                    phAvg = null;
+                }
+            }
+            
+            // Write to Firestore using merge (updates existing or creates new)
+            const hourlyRecord = {
+                hour: hourStr,
+                temperatureSum: temperatureSum,
+                temperatureCount: temperatureCount,
+                temperatureAvg: temperatureAvg,
+                phSum: phSum,
+                phCount: phCount,
+                phAvg: phAvg,
+                source: "rtdb-test",
+                isSeed: false,
+                updatedAt: serverTimestamp()
+            };
+            
+            await setDoc(hourRef, hourlyRecord, { merge: true });
+            
+            console.log(`[INGEST-LIVE] ✅ Wrote hourly record: ${dateStr}/hours/${hourStr}`, {
+                temperature: temperature !== null ? `${temperature}°C (sum: ${temperatureSum}, count: ${temperatureCount}, avg: ${temperatureAvg?.toFixed(2)})` : 'null',
+                ph: ph !== null ? `${ph} (sum: ${phSum}, count: ${phCount}, avg: ${phAvg?.toFixed(2)})` : 'null'
+            });
+            
+        } catch (error) {
+            console.error('[INGEST-LIVE] ❌ Error ingesting hourly data from RTDB:', error);
+        }
+    }, (error) => {
+        console.error('[INGEST-LIVE] ❌ RTDB listener error:', error);
+    });
+    
+    // Return cleanup function to stop the listener
+    return () => {
+        console.log('[INGEST-LIVE] Stopping live RTDB→Firestore ingestion');
+        off(sensorsRef);
+    };
+}
+
+// Change detection for Firestore recording (only record significant changes)
+let lastRecordedValues = {
+    temperature: null,
+    ph: null
+};
+
+// Thresholds for significant changes (only record if change exceeds these)
+const CHANGE_THRESHOLDS = {
+    temperature: 0.5,  // Record if temperature changes by 0.5°C or more
+    ph: 0.1            // Record if pH changes by 0.1 or more
+};
+
+// Throttle function to limit Firestore writes (max once per 30 seconds)
+let lastFirestoreWrite = 0;
+const FIRESTORE_WRITE_THROTTLE_MS = 30000; // 30 seconds
+
+// Check if sensor values have changed significantly
+// Using canonical hasSignificantChange helper function (defined at line 1438)
+
+// ============================================================
+// RTDB SENSOR LISTENER CORE (DOM-FREE, AUTH-INDEPENDENT)
+// ============================================================
+// Core RTDB listener that updates runtime state and emits events
+// NO DOM access, NO UI dependencies, works on any page
+export function setupSensorRealtimeUpdatesCore() {
+    try {
+        // Device ID for RTDB path (uses DEVICE_ID constant)
+        const rtdbPath = `devices/${DEVICE_ID}/status/feeder`;
+        
+        console.log('[CORE] RTDB listener starting:', rtdbPath);
+        
+        // Guard against duplicate listeners
+        if (window.sensorUnsubscribes && window.sensorUnsubscribes.rtdb) {
+            console.log('[CORE] RTDB listener already active, skipping');
+            return;
+        }
+        
+        // Set up RTDB listener for live sensor readings (temperature, pH, motor state)
+        // No auth check - listener works unconditionally
+        const statusRef = ref(rtdb, rtdbPath);
+        onValue(statusRef, (snapshot) => {
+            try {
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    
+                    let temperature = null;
+                    let ph = null;
+                    let feederState = null;
+                    
+                    // Parse temperature from RTDB
+                    if (data.temperature !== undefined && data.temperature !== null) {
+                        temperature = parseFloat(data.temperature);
+                    }
+                    
+                    // Parse pH from RTDB
+                    if (data.ph !== undefined && data.ph !== null) {
+                        ph = parseFloat(data.ph);
+                    }
+                    
+                    // Parse feeder/motor state from RTDB
+                    if (data.state !== undefined && data.state !== null) {
+                        const stateValue = String(data.state).toLowerCase();
+                        feederState = stateValue === 'online' ? 'online' : 'offline';
+                    }
+                    
+                    // Update runtime state (DOM-free)
+                    window.RUNTIME_STATE.temperature = temperature;
+                    window.RUNTIME_STATE.ph = ph;
+                    window.RUNTIME_STATE.feederState = feederState;
+                    window.RUNTIME_STATE.lastUpdateAt = Date.now();
+                    
+                    // Update local state for hourly writer (backward compatibility)
+                    latestTemperature = typeof temperature === 'number' ? temperature : null;
+                    latestPH = typeof ph === 'number' ? ph : null;
+                    latestTimestamp = data.timestamp || Date.now();
+                    
+                    // Emit event for UI bindings (if any)
+                    window.RuntimeEvents.emit('sensor:update', {
+                        temperature,
+                        ph,
+                        feederState,
+                        timestamp: window.RUNTIME_STATE.lastUpdateAt
+                    });
+                    
+                    console.log('[CORE] sensor:update emitted temp=' + temperature + ' ph=' + ph + ' state=' + feederState);
+                    
+                    // Trigger hourly writer when new sensor data arrives (respects cooldown)
+                    if (HOURLY_TEST_MODE) {
+                        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+                        if (uid && (temperature !== null || ph !== null)) {
+                            // Fire and forget - writeHourlyFromRTDB has built-in cooldown/throttle
+                            writeHourlyFromRTDB(uid).catch(err => {
+                                console.error('[CORE] Hourly write error:', err);
+                            });
+                        } else if (!uid) {
+                            // Optional logging if no UID (non-blocking)
+                            // console.log('[CORE] Hourly write skipped (no runtime UID)');
+                        }
+                    } else {
+                        // Legacy behavior (disabled in test mode)
+                        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+                        if (uid && (temperature !== null || ph !== null)) {
+                            const tempChanged = hasSignificantChange(lastRecordedValues.temperature, temperature, CHANGE_THRESHOLDS.temperature);
+                            const phChanged = hasSignificantChange(lastRecordedValues.ph, ph, CHANGE_THRESHOLDS.ph);
+                            if (tempChanged || phChanged) {
+                                const now = Date.now();
+                                if (now - lastFirestoreWrite > FIRESTORE_WRITE_THROTTLE_MS) {
+                                    lastFirestoreWrite = now;
+                                    if (temperature !== null) lastRecordedValues.temperature = temperature;
+                                    if (ph !== null) lastRecordedValues.ph = ph;
+                                    recordSensorDataToFirestore(uid, temperature, ph).catch(err => {
+                                        console.error('[CORE] Firestore write error:', err);
+                                    });
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // No data available
+                    window.RUNTIME_STATE.temperature = null;
+                    window.RUNTIME_STATE.ph = null;
+                    window.RUNTIME_STATE.feederState = null;
+                    window.RUNTIME_STATE.lastUpdateAt = Date.now();
+                    console.warn('[CORE] RTDB sensor data not available at:', rtdbPath);
+                }
+            } catch (error) {
+                console.error('[CORE] Error processing RTDB sensor update:', error);
+            }
+        }, (error) => {
+            console.error('[CORE] Error in RTDB sensor listener:', error);
+        });
+        
+        // Store reference and cleanup function for RTDB listener
+        window.sensorUnsubscribes = window.sensorUnsubscribes || {};
+        window.sensorUnsubscribes.rtdb = {
+            ref: statusRef,
+            cleanup: () => off(statusRef)
+        };
+        
+        console.log('[CORE] RTDB listener started');
+        
+    } catch (error) {
+        console.error('[CORE] Error setting up RTDB listener:', error);
+    }
+}
+
+// ============================================================
+// UI BINDINGS (OPTIONAL - DOM-DEPENDENT)
+// ============================================================
+// Attaches UI update functions to runtime events
+// Only call this if DOM elements exist (dashboard pages)
+export function attachSensorUIBindings() {
+    try {
+        // Check if DOM elements exist
+        const tempElement = document.getElementById('sensorTemperature');
+        const phElement = document.getElementById('sensorPh');
+        const feederElement = document.getElementById('sensorFeeder');
+        
+        if (!tempElement && !phElement && !feederElement) {
+            console.log('[UI] bindings skipped (no DOM)');
+            return;
+        }
+        
+        // Subscribe to sensor updates
+        window.RuntimeEvents.on('sensor:update', (state) => {
+            try {
+                // Update sensor displays
+                if (state.temperature !== null) {
+                    updateSensorDisplay('temperature', state.temperature, '°C');
+                } else {
+                    updateSensorDisplay('temperature', '--', '°C');
+                }
+                
+                if (state.ph !== null) {
+                    updateSensorDisplay('ph', state.ph, '');
+                } else {
+                    updateSensorDisplay('ph', '--', '');
+                }
+                
+                // Update feeder status
+                const isOnline = state.feederState === 'online';
+                updateFeederStatusDisplay(isOnline);
+                updateMotorToggleButton(isOnline);
+                
+                // Update chart
+                addLiveSensorReading(state.temperature, state.ph);
+            } catch (uiError) {
+                console.warn('[UI] Binding update error (non-critical):', uiError);
+            }
+        });
+        
+        console.log('[UI] bindings attached');
+    } catch (error) {
+        console.warn('[UI] Failed to attach bindings (non-critical):', error);
+    }
+}
+
+// ============================================================
+// LEGACY WRAPPER (BACKWARD COMPATIBILITY)
+// ============================================================
+// Maintains backward compatibility with existing code
+// Calls core + UI bindings
+export function setupSensorRealtimeUpdates() {
+    try {
+        // Device ID for RTDB path (uses DEVICE_ID constant)
+        const rtdbPath = `devices/${DEVICE_ID}/status/feeder`;
+        
+        console.log('[RTDB] Setting up real-time sensor updates from RTDB:', rtdbPath);
+        console.log('[RTDB] RTDB listener will work without authentication');
+        
+        // Set up RTDB listener for live sensor readings (temperature, pH, motor state)
+        // No auth check - listener works unconditionally
+        const statusRef = ref(rtdb, rtdbPath);
+        console.log('[RTDB] Attaching listener to:', rtdbPath);
+        onValue(statusRef, (snapshot) => {
+            try {
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
+                    
+                    let temperature = null;
+                    let ph = null;
+                    
+                    // Update temperature from RTDB
+                    if (data.temperature !== undefined && data.temperature !== null) {
+                        temperature = parseFloat(data.temperature);
+                        // [FIX] Wrap UI updates in try/catch - runtime must not fail if DOM missing
+                        try {
+                            updateSensorDisplay('temperature', temperature, '°C');
+                        } catch (uiError) {
+                            // UI update failed - non-critical, continue runtime
+                        }
+                        console.log('[RTDB] Temperature updated (RTDB):', temperature);
+                    } else {
+                        try {
+                            updateSensorDisplay('temperature', '--', '°C');
+                        } catch (uiError) {
+                            // UI update failed - non-critical
+                        }
+                    }
+                    
+                    // Update pH from RTDB
+                    if (data.ph !== undefined && data.ph !== null) {
+                        ph = parseFloat(data.ph);
+                        // [FIX] Wrap UI updates in try/catch - runtime must not fail if DOM missing
+                        try {
+                            updateSensorDisplay('ph', ph, '');
+                        } catch (uiError) {
+                            // UI update failed - non-critical, continue runtime
+                        }
+                        console.log('[RTDB] pH updated (RTDB):', ph);
+                    } else {
+                        try {
+                            updateSensorDisplay('ph', '--', '');
+                        } catch (uiError) {
+                            // UI update failed - non-critical
+                        }
+                    }
+                    
+                    // Update feeder/motor state from RTDB
+                    if (data.state !== undefined && data.state !== null) {
+                        const stateValue = String(data.state).toLowerCase();
+                        const isOnline = stateValue === 'online';
+                        // [FIX] Wrap UI updates in try/catch - runtime must not fail if DOM missing
+                        try {
+                            updateFeederStatusDisplay(isOnline);
+                            updateMotorToggleButton(isOnline); // Update toggle button appearance
+                        } catch (uiError) {
+                            // UI update failed - non-critical, continue runtime
+                        }
+                        console.log('[RTDB] Feeder state updated (RTDB):', stateValue);
+                    } else {
+                        try {
+                            updateFeederStatusDisplay(null);
+                            updateMotorToggleButton(null);
+                        } catch (uiError) {
+                            // UI update failed - non-critical
+                        }
+                    }
+                    
+                    // Add to live chart data (always update chart for real-time display)
+                    // [FIX] Wrap UI updates in try/catch - runtime must not fail if DOM missing
+                    try {
+                        addLiveSensorReading(temperature, ph);
+                    } catch (uiError) {
+                        // UI update failed - non-critical, continue runtime
+                    }
+                    
+                    // Update local state (READ-ONLY from RTDB - no Firestore writes here)
+                    latestTemperature = typeof temperature === 'number' ? temperature : null;
+                    latestPH = typeof ph === 'number' ? ph : null;
+                    latestTimestamp = data.timestamp || Date.now();
+                    
+                    // In HOURLY_TEST_MODE, RTDB listeners are read-only
+                    // Firestore writes are handled by writeHourlyFromRTDB() only
+                    if (HOURLY_TEST_MODE) {
+                        // Trigger hourly writer when new sensor data arrives (respects cooldown)
+                        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+                        if (uid && (temperature !== null || ph !== null)) {
+                            // Fire and forget - writeHourlyFromRTDB has built-in cooldown/throttle
+                            writeHourlyFromRTDB(uid).catch(err => {
+                                console.error('[RTDB→HOURLY WRITE] Error in writeHourlyFromRTDB:', err);
+                            });
+                        }
+                    } else {
+                        // Legacy behavior (disabled in test mode)
+                        // Record sensor data to Firestore ONLY if significant change detected
+                        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+                        if (uid && (temperature !== null || ph !== null)) {
+                            // Check if there's a significant change using canonical helper
+                            const tempChanged = hasSignificantChange(lastRecordedValues.temperature, temperature, CHANGE_THRESHOLDS.temperature);
+                            const phChanged = hasSignificantChange(lastRecordedValues.ph, ph, CHANGE_THRESHOLDS.ph);
+                            if (tempChanged || phChanged) {
+                                const now = Date.now();
+                                // Also respect throttle (max once per 30 seconds)
+                                if (now - lastFirestoreWrite > FIRESTORE_WRITE_THROTTLE_MS) {
+                                    lastFirestoreWrite = now;
+                                    
+                                    // Update last recorded values
+                                    if (temperature !== null) {
+                                        lastRecordedValues.temperature = temperature;
+                                    }
+                                    if (ph !== null) {
+                                        lastRecordedValues.ph = ph;
+                                    }
+                                    
+                                    // Fire and forget - don't await to avoid blocking UI updates
+                                    recordSensorDataToFirestore(uid, temperature, ph).catch(err => {
+                                        console.error('Error in background Firestore write:', err);
+                                    });
+                                    
+                                    console.log('[RTDB→FIRESTORE] Recording significant change to Firestore');
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // No data available, set defaults
+                    // [FIX] Wrap UI updates in try/catch - runtime must not fail if DOM missing
+                    try {
+                        updateSensorDisplay('temperature', '--', '°C');
+                        updateSensorDisplay('ph', '--', '');
+                        updateFeederStatusDisplay(null);
+                        updateMotorToggleButton(null);
+                    } catch (uiError) {
+                        // UI update failed - non-critical
+                    }
+                    console.warn('RTDB sensor data not available at:', rtdbPath);
+                }
+            } catch (error) {
+                console.error('Error processing RTDB sensor update:', error);
+            }
+        }, (error) => {
+            console.error('Error in RTDB sensor listener:', error);
+            // Set default values on error
+            // [FIX] Wrap UI updates in try/catch - runtime must not fail if DOM missing
+            try {
+                updateSensorDisplay('temperature', '--', '°C');
+                updateSensorDisplay('ph', '--', '');
+                updateFeederStatusDisplay(null);
+                updateMotorToggleButton(null);
+            } catch (uiError) {
+                // UI update failed - non-critical
+            }
+        });
+        
+        // Store reference and cleanup function for RTDB listener
+        window.sensorUnsubscribes = {
+            rtdb: {
+                ref: statusRef,
+                cleanup: () => off(statusRef)
+            }
+        };
+        
+        console.log('[RTDB] Real-time RTDB sensor listener set up successfully');
+        console.log('[RTDB] Listener attached, guard check:', !window.sensorUnsubscribes || !window.sensorUnsubscribes.rtdb ? 'PASSED' : 'ALREADY EXISTS');
         
     } catch (error) {
         console.error('Error setting up real-time sensor updates:', error);
-        // Fallback to polling if real-time fails
-        console.log('Falling back to polling for sensor updates');
-        setInterval(loadSensorData, 30000); // Poll every 30 seconds
+        // Set default values on error
+        // [FIX] Wrap UI updates in try/catch - runtime must not fail if DOM missing
+        try {
+            updateSensorDisplay('temperature', '--', '°C');
+            updateSensorDisplay('ph', '--', '');
+            updateFeederStatusDisplay(null);
+            updateMotorToggleButton(null);
+        } catch (uiError) {
+            // UI update failed - non-critical
+        }
     }
 }
 
@@ -1129,6 +3073,16 @@ function setupSensorRealtimeUpdates() {
 function cleanupSensorListeners() {
     try {
         if (window.sensorUnsubscribes) {
+            // Cleanup RTDB listener
+            if (window.sensorUnsubscribes.rtdb) {
+                if (window.sensorUnsubscribes.rtdb.cleanup && typeof window.sensorUnsubscribes.rtdb.cleanup === 'function') {
+                    window.sensorUnsubscribes.rtdb.cleanup();
+                } else if (window.sensorUnsubscribes.rtdb.ref) {
+                    // Fallback: use off() directly with reference
+                    off(window.sensorUnsubscribes.rtdb.ref);
+                }
+            }
+            // Legacy Firestore listener cleanup (for backward compatibility)
             if (window.sensorUnsubscribes.temperature && typeof window.sensorUnsubscribes.temperature === 'function') {
                 window.sensorUnsubscribes.temperature();
             }
@@ -1149,7 +3103,7 @@ function cleanupSensorListeners() {
 }
 
 // Helper function to create schedule item HTML (for new schema with execution-based status)
-function createScheduleItemHTML(schedule, executionStatus = 'PENDING') {
+function createScheduleItemHTML(schedule, executionStatus = 'PENDING', scheduleId = '') {
     const title = schedule.title || 'Untitled Schedule';
     const time = schedule.time || '--:--';
     const description = schedule.description || '';
@@ -1196,7 +3150,7 @@ function createScheduleItemHTML(schedule, executionStatus = 'PENDING') {
     }
     
     return `
-        <div class="schedule-item">
+        <div class="schedule-item user-schedule-item" data-schedule-id="${scheduleId}">
             <div class="schedule-time">
                 <span class="time">${displayTime}</span>
             </div>
@@ -1204,8 +3158,17 @@ function createScheduleItemHTML(schedule, executionStatus = 'PENDING') {
                 <div class="schedule-title"><strong>${title}</strong></div>
                 ${description ? `<div class="schedule-description"><i class="fas fa-info-circle"></i> ${description}</div>` : ''}
             </div>
-            <div class="schedule-status">
-                <span class="status ${statusClass}">${statusText}</span>
+            <div class="schedule-actions">
+                <div class="schedule-status">
+                    <span class="status ${statusClass}">${statusText}</span>
+                </div>
+                <button 
+                    class="schedule-delete-btn" 
+                    onclick="deleteFeedingSchedule('${scheduleId}')"
+                    title="Delete schedule"
+                >
+                    <i class="fas fa-trash"></i>
+                </button>
             </div>
         </div>
     `;
@@ -1227,8 +3190,9 @@ function renderSchedulesToContainer(schedulesWithStatus, containerId) {
     container.innerHTML = '';
     schedulesWithStatus.forEach(scheduleData => {
         const schedule = scheduleData.data;
+        const scheduleId = scheduleData.id || '';
         const executionStatus = scheduleData.executionStatus || 'PENDING';
-        const scheduleHTML = createScheduleItemHTML(schedule, executionStatus);
+        const scheduleHTML = createScheduleItemHTML(schedule, executionStatus, scheduleId);
         container.insertAdjacentHTML('beforeend', scheduleHTML);
     });
 }
@@ -1237,14 +3201,22 @@ function renderSchedulesToContainer(schedulesWithStatus, containerId) {
 // FEEDING SCHEDULE STATUS COMPUTATION (EXECUTION-BASED)
 // ============================================================
 
-// Determine schedule execution status based on feedingLogs
-// Execution-based status logic: COMPLETED only if feedingLog exists for today
+// Determine schedule execution status based on daily cycle
+// CORE RULE: A feeding schedule can run ONCE PER DAY
+// Status priority (ORDER IS CRITICAL):
+// 1. COMPLETED: If completed log exists for TODAY (overrides ALL other states)
+// 2. RUNNING: If no completed log today AND T ≤ now < E
+// 3. PENDING: If no completed log today AND now < T
+// 4. PENDING: If no completed log today AND now ≥ E (missed, no re-run)
+// 
+// Formula: T = scheduled time, D = duration (minutes), E = T + D
 // Expected feedingLogs structure: users/{uid}/feedingLogs/{logId}
 //   - scheduleId: string (matches schedule document ID)
-//   - executedAt: Timestamp (execution time)
-//   - feedAmount?: number (optional)
-//   - status?: 'completed' (optional, defaults to completed if exists)
-async function determineScheduleStatus(uid, scheduleId, scheduleTime) {
+//   - status: 'running' | 'completed'
+//   - startedAt: Timestamp (when motor was turned ON)
+//   - endedAt?: Timestamp (when motor was turned OFF, only if completed)
+//   - duration: number (minutes)
+async function determineScheduleStatus(uid, scheduleId, scheduleTime, scheduleDuration) {
     try {
         const now = new Date();
         const today = getStartOfDay(now);
@@ -1260,77 +3232,721 @@ async function determineScheduleStatus(uid, scheduleId, scheduleTime) {
             return 'PENDING';
         }
         
-        // Compute today's scheduled DateTime (local time)
+        // Compute today's scheduled DateTime (local time) - T
         const scheduledDateTime = new Date(today);
         scheduledDateTime.setHours(hours, minutes, 0, 0);
         
-        // Check if feedingLogs collection exists and has execution record for today
-        // TODO: If feedingLogs collection doesn't exist yet, all schedules will show as PENDING
-        // This is intentional - schedules should only show COMPLETED when execution is recorded
+        // Get duration (default to 30 minutes if not provided)
+        const duration = scheduleDuration || 30;
+        
+        // Compute end time - E = T + D minutes
+        const endDateTime = new Date(scheduledDateTime.getTime() + duration * 60 * 1000);
+        
+        // ============================================================
+        // STEP 1: CHECK FOR COMPLETED LOG (HIGHEST PRIORITY)
+        // ============================================================
+        // COMPLETED status overrides ALL other states
+        // A schedule is considered completed today if:
+        //   - exists feedingLogs document where:
+        //     - log.scheduleId === scheduleId
+        //     - log.status === "completed"
+        //     - log.startedAt is TODAY (00:00–23:59 local time)
         try {
             const feedingLogsRef = collection(db, `users/${uid}/feedingLogs`);
             const feedingLogsSnapshot = await getDocs(feedingLogsRef);
             
-            let hasExecutionToday = false;
+            let hasCompletedLogToday = false;
             feedingLogsSnapshot.forEach(logDoc => {
                 const log = logDoc.data();
-                // Check if this log is for this schedule and executed today (local time)
-                if (log.scheduleId === scheduleId && log.executedAt) {
-                    const executedAt = timestampToDate(log.executedAt);
-                    if (executedAt && executedAt >= today && executedAt <= todayEnd) {
-                        // Check if status is completed (if status field exists)
-                        // If no status field, assume completed if executedAt exists
-                        if (!log.status || log.status === 'completed') {
-                            hasExecutionToday = true;
+                // Check if this log is for this schedule
+                if (log.scheduleId === scheduleId && log.startedAt) {
+                    const startedAt = timestampToDate(log.startedAt);
+                    // Check if started today (local time, 00:00–23:59)
+                    if (startedAt && startedAt >= today && startedAt <= todayEnd) {
+                        // Check if status is completed
+                        if (log.status === 'completed') {
+                            hasCompletedLogToday = true;
                         }
                     }
                 }
             });
             
-            // Status determination logic (authoritative)
-            if (hasExecutionToday) {
-                // COMPLETED: Execution log exists for today
+            // If completed log exists for today, return COMPLETED immediately
+            // This overrides ALL other states (RUNNING, PENDING, etc.)
+            if (hasCompletedLogToday) {
                 return 'COMPLETED';
-            } else if (now >= scheduledDateTime) {
-                // Check if within execution window (30 minutes after scheduled time)
-                const executionWindowEnd = new Date(scheduledDateTime.getTime() + 30 * 60 * 1000);
-                if (now <= executionWindowEnd) {
-                    // RUNNING: Scheduled time has passed but no execution log yet, within window
-                    return 'RUNNING';
-                } else {
-                    // Past execution window but no log - treat as PENDING (NOT completed)
-                    // This prevents false COMPLETED status
-                    return 'PENDING';
-                }
-            } else {
-                // PENDING: Scheduled time has not been reached yet
-                return 'PENDING';
             }
         } catch (logsError) {
-            // If feedingLogs collection doesn't exist or can't be read, default to PENDING
-            // This ensures we never show false COMPLETED status
-            console.warn('Could not check feedingLogs, defaulting to PENDING (no false completion):', logsError);
-            
-            // Still check time-based status for RUNNING (but never COMPLETED without log)
-            if (now >= scheduledDateTime) {
-                const executionWindowEnd = new Date(scheduledDateTime.getTime() + 30 * 60 * 1000);
-                if (now <= executionWindowEnd) {
-                    return 'RUNNING';
-                }
-            }
-            // Always return PENDING if no execution log exists
+            // If feedingLogs collection doesn't exist or can't be read, continue to other checks
+            console.warn('Could not check feedingLogs, continuing with time-based checks:', logsError);
+        }
+        
+        // ============================================================
+        // STEP 2: CHECK IF IN RUNNING WINDOW
+        // ============================================================
+        // RUNNING: No completed log today AND T ≤ now < E
+        // Motor should already be ON during this window
+        if (now >= scheduledDateTime && now < endDateTime) {
+            return 'RUNNING';
+        }
+        
+        // ============================================================
+        // STEP 3: CHECK IF BEFORE SCHEDULED TIME
+        // ============================================================
+        // PENDING: No completed log today AND now < T
+        // Motor OFF, waiting for scheduled time
+        if (now < scheduledDateTime) {
             return 'PENDING';
         }
+        
+        // ============================================================
+        // STEP 4: PAST END TIME BUT NO COMPLETED LOG
+        // ============================================================
+        // PENDING (missed): No completed log today AND now ≥ E
+        // Must NOT restart feeding, must NOT show RUNNING
+        // Schedule will reset at 00:00 next day
+        if (now >= endDateTime) {
+            return 'PENDING';
+        }
+        
+        // Default fallback
+        return 'PENDING';
     } catch (error) {
         console.error('Error determining schedule status:', error);
-        return 'PENDING'; // Default to PENDING on error (never false COMPLETED)
+        return 'PENDING'; // Default to PENDING on error
+    }
+}
+
+// ============================================================
+// AUTOMATIC FEEDING SCHEDULE EXECUTION (Start → Run → Stop)
+// ============================================================
+
+// ============================================================
+// DEVICE OWNERSHIP MAPPING (Part 1)
+// ============================================================
+// Device ID constant - comes from ESP firmware, never generated in web app
+export const DEVICE_ID = 'H5hY84Qz85TD9MBPb6UKy3mzLxZ2';
+
+// ============================================================
+// RUNTIME CONTEXT RESOLVER
+// ============================================================
+// Centralized resolver for runtime UID - works with or without authentication
+// Uses device ownership mapping as fallback when no user is logged in
+// Never throws - always returns a valid context object
+export async function resolveRuntimeContext() {
+    const deviceId = DEVICE_ID;
+    let authUid = null;
+    let ownerUid = null;
+    let runtimeUid = null;
+    let source = 'none';
+    
+    try {
+        // Step 1: Check Firebase Auth (highest priority)
+        if (auth && auth.currentUser && auth.currentUser.uid) {
+            authUid = auth.currentUser.uid;
+            runtimeUid = authUid;
+            source = 'auth';
+            console.log('[RUNTIME] Auth user detected → using auth UID:', authUid);
+            return {
+                deviceId: deviceId,
+                authUid: authUid,
+                ownerUid: null, // Not needed when auth is present
+                runtimeUid: runtimeUid,
+                source: source
+            };
+        }
+        
+        // Step 2: Fallback to Firestore device ownership mapping
+        try {
+            const deviceRef = doc(db, 'devices', deviceId);
+            const deviceSnap = await getDoc(deviceRef);
+            
+            if (deviceSnap.exists()) {
+                const deviceData = deviceSnap.data();
+                ownerUid = deviceData.ownerUid || null;
+                
+                if (ownerUid) {
+                    runtimeUid = ownerUid;
+                    source = 'device';
+                    console.log('[RUNTIME] No auth user → resolved owner UID from device:', ownerUid);
+                } else {
+                    runtimeUid = null;
+                    source = 'none';
+                    console.log('[RUNTIME] No UID available → read-only mode');
+                }
+            } else {
+                runtimeUid = null;
+                source = 'none';
+                console.log('[RUNTIME] No UID available → read-only mode (device record not found)');
+            }
+        } catch (firestoreError) {
+            // Firestore read failed - continue in read-only mode
+            console.warn('[RUNTIME] Firestore read failed, continuing in read-only mode:', firestoreError.message);
+            runtimeUid = null;
+            source = 'none';
+        }
+    } catch (error) {
+        // Catch-all error handler - never throw
+        console.error('[RUNTIME] Error resolving runtime context:', error);
+        runtimeUid = null;
+        source = 'none';
+    }
+    
+    // Return context object (always returns, never throws)
+    return {
+        deviceId: deviceId,
+        authUid: authUid,
+        ownerUid: ownerUid,
+        runtimeUid: runtimeUid,
+        source: source
+    };
+}
+
+// Ensure device record exists in Firestore (runs on dashboard initialization)
+// Firestore Path: devices/{deviceId}
+// This function is idempotent - safe to call multiple times
+// Works with or without authentication
+// Never throws errors - fails gracefully
+export async function ensureDeviceRecordExists() {
+    if (!DEVICE_ID) {
+        console.warn('[DEVICE INIT] DEVICE_ID constant is missing');
+        return;
+    }
+    
+    try {
+        const deviceRef = doc(db, 'devices', DEVICE_ID);
+        const deviceSnap = await getDoc(deviceRef);
+        
+        if (deviceSnap.exists()) {
+            // Document already exists - do nothing, optionally update lastSeenAt
+            const existingData = deviceSnap.data();
+            console.log('[DEVICE INIT] Device record exists', {
+                deviceId: DEVICE_ID,
+                ownerUid: existingData.ownerUid || 'null',
+                path: `devices/${DEVICE_ID}`
+            });
+            
+            // Optionally update lastSeenAt (non-blocking)
+            try {
+                await updateDoc(deviceRef, {
+                    lastSeenAt: serverTimestamp()
+                });
+            } catch (updateError) {
+                // Ignore update errors - document exists, that's what matters
+                console.log('[DEVICE INIT] Could not update lastSeenAt (non-critical)');
+            }
+            return;
+        }
+        
+        // Document does not exist - create it
+        // Resolve ownerUid: use auth.currentUser.uid if logged in, null otherwise
+        let ownerUid = null;
+        try {
+            if (auth && auth.currentUser) {
+                ownerUid = auth.currentUser.uid;
+            }
+        } catch (authError) {
+            // Auth not available - use null (allows headless runtime)
+            console.log('[DEVICE INIT] No authenticated user, creating record with ownerUid: null');
+        }
+        
+        await setDoc(deviceRef, {
+            ownerUid: ownerUid,
+            createdAt: serverTimestamp(),
+            lastSeenAt: serverTimestamp(),
+            source: 'web-autocreate'
+        });
+        
+        console.log('[DEVICE INIT] Device record created', {
+            deviceId: DEVICE_ID,
+            ownerUid: ownerUid || 'null',
+            path: `devices/${DEVICE_ID}`
+        });
+    } catch (error) {
+        // Never throw - this is non-blocking infrastructure
+        console.error('[DEVICE INIT] Failed to create device record', {
+            deviceId: DEVICE_ID,
+            error: error.message,
+            code: error.code
+        });
+    }
+}
+
+// Ensure device ownership mapping exists in Firestore (called on login)
+// Firestore Path: devices/{deviceId}
+// This function is idempotent - safe to call multiple times
+// Only creates mapping if it doesn't exist, never overwrites existing ownerUid
+export async function ensureDeviceOwnershipMapping(deviceId, ownerUid) {
+    if (!deviceId || !ownerUid) {
+        console.warn('[DEVICE MAP] Missing deviceId or ownerUid, cannot create mapping');
+        return;
+    }
+    
+    try {
+        const deviceRef = doc(db, 'devices', deviceId);
+        const deviceSnap = await getDoc(deviceRef);
+        
+        if (deviceSnap.exists()) {
+            // Mapping already exists - do nothing except maybe update lastSeenAt
+            const existingData = deviceSnap.data();
+            console.log('[DEVICE MAP] Mapping already exists for device:', deviceId, 'ownerUid:', existingData.ownerUid);
+            
+            // Optionally update lastSeenAt if provided
+            if (existingData.ownerUid === ownerUid) {
+                // Only update lastSeenAt if the ownerUid matches (safety check)
+                await updateDoc(deviceRef, {
+                    lastSeenAt: serverTimestamp()
+                });
+                console.log('[DEVICE MAP] Updated lastSeenAt for existing mapping');
+            }
+            return;
+        }
+        
+        // Mapping does not exist - create it
+        await setDoc(deviceRef, {
+            ownerUid: ownerUid,
+            createdAt: serverTimestamp(),
+            lastSeenAt: serverTimestamp(),
+            source: 'web-autocreate'
+        });
+        
+        console.log('[DEVICE MAP] Created ownership mapping:', {
+            deviceId: deviceId,
+            ownerUid: ownerUid,
+            path: `devices/${deviceId}`
+        });
+    } catch (error) {
+        console.error('[DEVICE MAP] Error ensuring device ownership mapping:', error);
+        // Don't throw - this should not break login flow
+    }
+}
+
+// Get owner UID from device ID (read-only, no auth required)
+// Returns ownerUid if exists, null if missing
+// This function must work without authentication
+export async function getOwnerUidFromDevice(deviceId) {
+    if (!deviceId) {
+        console.warn('[DEVICE MAP] No deviceId provided');
+        return null;
+    }
+    
+    try {
+        const deviceRef = doc(db, 'devices', deviceId);
+        const deviceSnap = await getDoc(deviceRef);
+        
+        if (!deviceSnap.exists()) {
+            console.log('[DEVICE MAP] No ownerUid found for device:', deviceId);
+            return null;
+        }
+        
+        const data = deviceSnap.data();
+        const ownerUid = data.ownerUid || null;
+        
+        if (ownerUid) {
+            console.log('[DEVICE MAP] ownerUid resolved:', ownerUid, 'for device:', deviceId);
+        } else {
+            console.warn('[DEVICE MAP] Device document exists but ownerUid is missing for device:', deviceId);
+        }
+        
+        return ownerUid;
+    } catch (error) {
+        console.error('[DEVICE MAP] Error reading device ownership mapping:', error);
+        // Return null on error - don't throw
+        return null;
+    }
+}
+
+// ============================================================
+// AUTOMATIC FEEDING SCHEDULE EXECUTION (Start → Run → Stop)
+// ============================================================
+
+// Start motor: Turn motor ON when scheduled time T is reached
+// RTDB write always executes (no auth required)
+// Firestore log is optional (only if uid is available)
+async function startFeedingSchedule(deviceId, uid, scheduleId, scheduleTime, duration) {
+    try {
+        // RTDB motor control (always executes, no auth required)
+        const feederStateRef = ref(rtdb, `devices/${deviceId}/status/feeder/state`);
+        await set(feederStateRef, "online");
+        
+        // Verify the write
+        const snap = await get(feederStateRef);
+        console.log('[FEEDING VERIFY] RTDB state =', snap.val());
+        
+        console.log(`[FEEDING] Motor turned ON for schedule ${scheduleId} at ${scheduleTime} (RTDB write successful)`);
+        
+        // Firestore log is optional - only create if uid is available
+        if (uid) {
+            try {
+                const now = new Date();
+                const today = getStartOfDay(now);
+                
+                // Parse schedule time to get T (scheduled DateTime)
+                const [hours, minutes] = scheduleTime.split(':').map(Number);
+                const scheduledDateTime = new Date(today);
+                scheduledDateTime.setHours(hours, minutes, 0, 0);
+                
+                // Check if a log already exists for today (prevent duplicate starts)
+                const feedingLogsRef = collection(db, `users/${uid}/feedingLogs`);
+                const logsSnapshot = await getDocs(feedingLogsRef);
+                
+                let existingLogId = null;
+                logsSnapshot.forEach(logDoc => {
+                    const log = logDoc.data();
+                    if (log.scheduleId === scheduleId && log.startedAt) {
+                        const startedAt = timestampToDate(log.startedAt);
+                        if (startedAt && startedAt >= today && startedAt <= getEndOfDay(now)) {
+                            existingLogId = logDoc.id;
+                        }
+                    }
+                });
+                
+                // If log already exists and is running, don't create duplicate
+                if (existingLogId) {
+                    const existingLog = await getDoc(doc(db, `users/${uid}/feedingLogs/${existingLogId}`));
+                    if (existingLog.exists() && existingLog.data().status === 'running') {
+                        console.log(`[FEEDING] Schedule ${scheduleId} already has running log, skipping Firestore write`);
+                        return;
+                    }
+                }
+                
+                // Create or update Firestore log
+                const logData = {
+                    scheduleId: scheduleId,
+                    status: 'running',
+                    startedAt: serverTimestamp(),
+                    duration: duration,
+                    createdAt: serverTimestamp()
+                };
+                
+                if (existingLogId) {
+                    // Update existing log
+                    await updateDoc(doc(db, `users/${uid}/feedingLogs/${existingLogId}`), logData);
+                    console.log(`[FEEDING] Updated log ${existingLogId} for schedule ${scheduleId}`);
+                } else {
+                    // Create new log
+                    await addDoc(feedingLogsRef, logData);
+                    console.log(`[FEEDING] Created new log for schedule ${scheduleId}`);
+                }
+            } catch (firestoreError) {
+                // Firestore log failed, but RTDB write succeeded - log and continue
+                console.warn(`[FEEDING] Firestore log failed for schedule ${scheduleId}, but RTDB motor control succeeded:`, firestoreError);
+            }
+        } else {
+            console.log(`[FEEDING] No uid available, skipping Firestore log for schedule ${scheduleId} (RTDB motor control executed)`);
+        }
+        
+    } catch (error) {
+        console.error(`[FEEDING] Error starting schedule ${scheduleId}:`, error);
+        // Don't throw - allow other schedules to continue
+    }
+}
+
+// Keep motor running: Ensure motor stays "online" while T ≤ now < E
+async function keepMotorRunning(deviceId, scheduleId) {
+    try {
+        // Check current motor state at EXACT RTDB path
+        const feederStateRef = ref(rtdb, `devices/${deviceId}/status/feeder/state`);
+        const snapshot = await get(feederStateRef);
+        
+        let currentState = null;
+        if (snapshot.exists()) {
+            currentState = String(snapshot.val()).toLowerCase();
+        }
+        
+        // If motor is not online, turn it on
+        if (currentState !== 'online') {
+            await set(feederStateRef, "online");
+            
+            // Verify the write
+            const snap = await get(feederStateRef);
+            console.log('[FEEDING VERIFY] RTDB state =', snap.val());
+            
+            console.log(`[FEEDING] Motor kept ON for schedule ${scheduleId}`);
+        }
+    } catch (error) {
+        console.error(`[FEEDING] Error keeping motor running for schedule ${scheduleId}:`, error);
+    }
+}
+
+// Stop motor: Turn motor OFF when end time E is reached
+// RTDB write always executes (no auth required)
+// Firestore log update is optional (only if uid and logId are available)
+async function stopFeedingSchedule(deviceId, uid, scheduleId) {
+    try {
+        // RTDB motor control (always executes, no auth required)
+        const feederStateRef = ref(rtdb, `devices/${deviceId}/status/feeder/state`);
+        await set(feederStateRef, "offline");
+        
+        // Verify the write
+        const snap = await get(feederStateRef);
+        console.log('[FEEDING VERIFY] RTDB state =', snap.val());
+        
+        console.log(`[FEEDING] Motor turned OFF for schedule ${scheduleId} (RTDB write successful)`);
+        
+        // Firestore log update is optional - only update if uid is available
+        if (uid) {
+            try {
+                const now = new Date();
+                const today = getStartOfDay(now);
+                const todayEnd = getEndOfDay(now);
+                
+                // Find the log for this schedule today
+                const feedingLogsRef = collection(db, `users/${uid}/feedingLogs`);
+                const logsSnapshot = await getDocs(feedingLogsRef);
+                
+                let logId = null;
+                logsSnapshot.forEach(logDoc => {
+                    const log = logDoc.data();
+                    if (log.scheduleId === scheduleId && log.startedAt) {
+                        const startedAt = timestampToDate(log.startedAt);
+                        if (startedAt && startedAt >= today && startedAt <= todayEnd) {
+                            // Only update if status is still "running"
+                            if (log.status === 'running') {
+                                logId = logDoc.id;
+                            }
+                        }
+                    }
+                });
+                
+                // Update Firestore log if found
+                if (logId) {
+                    await updateDoc(doc(db, `users/${uid}/feedingLogs/${logId}`), {
+                        status: 'completed',
+                        endedAt: serverTimestamp(),
+                        updatedAt: serverTimestamp()
+                    });
+                    console.log(`[FEEDING] Updated log ${logId} to completed for schedule ${scheduleId}`);
+                } else {
+                    console.log(`[FEEDING] No running log found for schedule ${scheduleId}, RTDB motor control executed anyway`);
+                }
+            } catch (firestoreError) {
+                // Firestore log update failed, but RTDB write succeeded - log and continue
+                console.warn(`[FEEDING] Firestore log update failed for schedule ${scheduleId}, but RTDB motor control succeeded:`, firestoreError);
+            }
+        } else {
+            console.log(`[FEEDING] No uid available, skipping Firestore log update for schedule ${scheduleId} (RTDB motor control executed)`);
+        }
+        
+    } catch (error) {
+        console.error(`[FEEDING] Error stopping schedule ${scheduleId}:`, error);
+        // Don't throw - allow other schedules to continue
+    }
+}
+
+// Main function: Check all schedules and execute Start → Run → Stop logic
+// RTDB motor control works without authentication
+// Firestore schedule fetching is optional (only if uid is available)
+async function executeFeedingSchedules() {
+    try {
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+        const now = new Date();
+        const today = getStartOfDay(now);
+        
+        // If no uid, we can't fetch schedules from Firestore, but RTDB motor control could still work
+        // For now, we require uid to fetch schedules, but RTDB writes within schedule execution are unconditional
+        if (!uid) {
+            // No user - can't fetch schedules, but this is OK for headless operation
+            // RTDB motor control would work if we had schedules from another source
+            // console.log('[CORE] Feeding schedule execution skipped (no runtime UID)');
+            return;
+        }
+        
+        // Fetch all enabled schedules (requires uid)
+        const schedulesRef = collection(db, `users/${uid}/schedules`);
+        const schedulesSnapshot = await getDocs(schedulesRef);
+        
+        // Track if any schedule is currently active (running window)
+        let hasActiveSchedule = false;
+        const activeScheduleIds = new Set();
+        
+        // First pass: Identify active schedules (T ≤ now < E)
+        for (const scheduleDoc of schedulesSnapshot.docs) {
+            const schedule = scheduleDoc.data();
+            const scheduleId = scheduleDoc.id;
+            
+            // Skip disabled schedules
+            if (schedule.isEnabled === false) {
+                continue;
+            }
+            
+            const scheduleTime = schedule.time;
+            const duration = schedule.duration || 30;
+            
+            if (!scheduleTime || !scheduleTime.includes(':')) {
+                continue; // Invalid schedule
+            }
+            
+            // Parse schedule time
+            const [hours, minutes] = scheduleTime.split(':').map(Number);
+            const scheduledDateTime = new Date(today);
+            scheduledDateTime.setHours(hours, minutes, 0, 0);
+            const endDateTime = new Date(scheduledDateTime.getTime() + duration * 60 * 1000);
+            
+            // Check if this schedule is currently in its running window
+            if (now >= scheduledDateTime && now < endDateTime) {
+                hasActiveSchedule = true;
+                activeScheduleIds.add(scheduleId);
+            }
+        }
+        
+        // Process schedules sequentially to avoid race conditions
+        for (const scheduleDoc of schedulesSnapshot.docs) {
+            const schedule = scheduleDoc.data();
+            const scheduleId = scheduleDoc.id;
+            
+            // Skip disabled schedules
+            if (schedule.isEnabled === false) {
+                continue;
+            }
+            
+            const scheduleTime = schedule.time;
+            const duration = schedule.duration || 30; // Default 30 minutes
+            
+            if (!scheduleTime || !scheduleTime.includes(':')) {
+                continue; // Invalid schedule
+            }
+            
+            // Parse schedule time to get T (scheduled DateTime)
+            const [hours, minutes] = scheduleTime.split(':').map(Number);
+            const scheduledDateTime = new Date(today);
+            scheduledDateTime.setHours(hours, minutes, 0, 0);
+            
+            // Compute end time E = T + D minutes
+            const endDateTime = new Date(scheduledDateTime.getTime() + duration * 60 * 1000);
+            
+            // 1) START: If T ≤ now and we haven't started yet
+            if (now >= scheduledDateTime) {
+                // Check if we have a running log for today
+                const feedingLogsRef = collection(db, `users/${uid}/feedingLogs`);
+                const logsSnapshot = await getDocs(feedingLogsRef);
+                
+                let hasRunningLog = false;
+                logsSnapshot.forEach(logDoc => {
+                    const log = logDoc.data();
+                    if (log.scheduleId === scheduleId && log.startedAt) {
+                        const startedAt = timestampToDate(log.startedAt);
+                        if (startedAt && startedAt >= today && startedAt <= getEndOfDay(now)) {
+                            if (log.status === 'running') {
+                                hasRunningLog = true;
+                            }
+                        }
+                    }
+                });
+                
+                // If no running log exists, start the schedule
+                if (!hasRunningLog && now < endDateTime) {
+                    await startFeedingSchedule(DEVICE_ID, uid, scheduleId, scheduleTime, duration);
+                }
+            }
+            
+            // 2) RUN: Keep motor ON while T ≤ now < E
+            if (now >= scheduledDateTime && now < endDateTime) {
+                await keepMotorRunning(DEVICE_ID, scheduleId);
+            }
+            
+            // 3) STOP: Turn motor OFF when now ≥ E
+            // BUT ONLY if:
+            //   a) This schedule actually started the motor (has running log)
+            //   b) No other schedule is currently active (to prevent turning off during schedule overlap)
+            // Don't turn off motor if it was started manually (no schedule log)
+            if (now >= endDateTime) {
+                // Check if there's a running log for this schedule today
+                const feedingLogsRef = collection(db, `users/${uid}/feedingLogs`);
+                const logsSnapshot = await getDocs(feedingLogsRef);
+                
+                let hasRunningLogForSchedule = false;
+                logsSnapshot.forEach(logDoc => {
+                    const log = logDoc.data();
+                    if (log.scheduleId === scheduleId && log.startedAt) {
+                        const startedAt = timestampToDate(log.startedAt);
+                        if (startedAt && startedAt >= today && startedAt <= getEndOfDay(now)) {
+                            if (log.status === 'running') {
+                                hasRunningLogForSchedule = true;
+                            }
+                        }
+                    }
+                });
+                
+                // Only stop if:
+                // 1. This schedule actually started the motor (has running log)
+                // 2. No other schedule is currently active (prevents turning off during overlap)
+                if (hasRunningLogForSchedule && !hasActiveSchedule) {
+                    await stopFeedingSchedule(DEVICE_ID, uid, scheduleId);
+                } else if (hasRunningLogForSchedule && hasActiveSchedule) {
+                    // This schedule ended but another is active - just update the log, don't turn off motor
+                    console.log(`[FEEDING] Schedule ${scheduleId} ended but other schedules active, keeping motor on`);
+                    // Update log to completed but don't turn off motor
+                    try {
+                        const logsSnapshot2 = await getDocs(feedingLogsRef);
+                        logsSnapshot2.forEach(logDoc => {
+                            const log = logDoc.data();
+                            if (log.scheduleId === scheduleId && log.status === 'running') {
+                                const startedAt = timestampToDate(log.startedAt);
+                                if (startedAt && startedAt >= today && startedAt <= getEndOfDay(now)) {
+                                    updateDoc(doc(db, `users/${uid}/feedingLogs/${logDoc.id}`), {
+                                        status: 'completed',
+                                        endedAt: serverTimestamp(),
+                                        updatedAt: serverTimestamp()
+                                    }).catch(err => console.warn('[FEEDING] Log update error:', err));
+                                }
+                            }
+                        });
+                    } catch (err) {
+                        console.warn('[FEEDING] Error updating log:', err);
+                    }
+                }
+                // If no running log exists, motor was likely started manually - don't turn it off
+            }
+        }
+        
+    } catch (error) {
+        console.error('[FEEDING] Error executing feeding schedules:', error);
+    }
+}
+
+// Set up periodic execution checker (runs every 30 seconds)
+// Unified guard for feeding schedule interval
+window.__FEEDING_TIMER__ = window.__FEEDING_TIMER__ || null;
+
+// Core feeding schedule executor (DOM-free, auth-independent)
+export function setupFeedingScheduleExecutionCore() {
+    // Guard against duplicate intervals
+    if (window.__FEEDING_TIMER__) {
+        console.log('[CORE] Feeding schedule interval already active, skipping');
+        return;
+    }
+    
+    // Run immediately
+    executeFeedingSchedules();
+    
+    // Then run every 30 seconds
+    window.__FEEDING_TIMER__ = setInterval(() => {
+        console.log('[CORE] feeding schedule tick');
+        executeFeedingSchedules();
+    }, 30000); // 30 seconds
+    
+    console.log('[CORE] Feeding schedule interval started');
+}
+
+// Legacy wrapper (backward compatibility)
+export function setupFeedingScheduleExecution() {
+    setupFeedingScheduleExecutionCore();
+}
+
+// Stop the execution checker
+function stopFeedingScheduleExecution() {
+    if (feedingScheduleInterval) {
+        clearInterval(feedingScheduleInterval);
+        feedingScheduleInterval = null;
+        console.log('[FEEDING] Schedule execution checker stopped');
     }
 }
 
 // Load feeding schedules from Firestore with execution-based status
 async function loadFeedingSchedules() {
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
         if (!uid) {
             console.warn('No user UID found, cannot load feeding schedules');
             return;
@@ -1380,7 +3996,8 @@ async function loadFeedingSchedules() {
                 const executionStatus = await determineScheduleStatus(
                     uid,
                     schedule.id,
-                    schedule.data.time
+                    schedule.data.time,
+                    schedule.data.duration
                 );
                 
                 return { ...schedule, executionStatus };
@@ -1418,10 +4035,111 @@ async function loadFeedingSchedules() {
     }
 }
 
+// Add new feeding schedule
+window.addFeedingSchedule = async function() {
+    try {
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+        if (!uid) {
+            showNotification('User not authenticated', 'error');
+            return;
+        }
+        
+        const timeInput = document.getElementById('scheduleTime');
+        const durationInput = document.getElementById('scheduleDuration');
+        
+        if (!timeInput || !durationInput) {
+            showNotification('Form inputs not found', 'error');
+            return;
+        }
+        
+        const timeValue = timeInput.value; // Format: "HH:mm" (e.g., "07:00")
+        const durationValue = parseInt(durationInput.value, 10);
+        
+        if (!timeValue) {
+            showNotification('Please select a time', 'error');
+            timeInput.focus();
+            return;
+        }
+        
+        if (isNaN(durationValue) || durationValue < 1) {
+            showNotification('Please enter a valid duration (minimum 1 minute)', 'error');
+            durationInput.focus();
+            return;
+        }
+        
+        // Format duration for display (e.g., "30 mins")
+        const durationDisplay = durationValue === 1 ? '1 min' : `${durationValue} mins`;
+        
+        // Create schedule document
+        const scheduleData = {
+            time: timeValue, // Store as "HH:mm" format
+            duration: durationValue, // Duration in minutes
+            title: 'Feeding Schedule',
+            description: `One-time feeding | Duration: ${durationDisplay}`,
+            isEnabled: true,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+        };
+        
+        // Save to Firestore
+        const schedulesRef = collection(db, `users/${uid}/schedules`);
+        await addDoc(schedulesRef, scheduleData);
+        
+        console.log('[FEEDING] Schedule added:', { time: timeValue, duration: durationValue });
+        showNotification('Feeding schedule added successfully!', 'success');
+        
+        // Clear form
+        timeInput.value = '';
+        durationInput.value = '30';
+        
+        // Reload schedules to show the new one
+        await loadFeedingSchedules();
+        
+    } catch (error) {
+        console.error('Error adding feeding schedule:', error);
+        showNotification('Failed to add feeding schedule', 'error');
+    }
+};
+
+// Delete feeding schedule
+window.deleteFeedingSchedule = async function(scheduleId) {
+    if (!scheduleId) {
+        showNotification('Schedule ID is required', 'error');
+        return;
+    }
+    
+    // Confirm deletion
+    if (!confirm('Are you sure you want to delete this feeding schedule?')) {
+        return;
+    }
+    
+    try {
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+        if (!uid) {
+            showNotification('User not authenticated', 'error');
+            return;
+        }
+        
+        // Delete from Firestore
+        const scheduleRef = doc(db, `users/${uid}/schedules/${scheduleId}`);
+        await deleteDoc(scheduleRef);
+        
+        console.log('[FEEDING] Schedule deleted:', scheduleId);
+        showNotification('Feeding schedule deleted successfully!', 'success');
+        
+        // Reload schedules to update the list
+        await loadFeedingSchedules();
+        
+    } catch (error) {
+        console.error('Error deleting feeding schedule:', error);
+        showNotification('Failed to delete feeding schedule', 'error');
+    }
+};
+
 // Set up feeding schedule auto-refresh (on section open, page focus, and periodic updates)
 function setupFeedingScheduleAutoRefresh() {
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
         if (!uid) {
             console.warn('No user UID found, cannot set up feeding schedule auto-refresh');
             return;
@@ -1509,7 +4227,7 @@ window.refreshFeedingSchedules = loadFeedingSchedules;
 
 // Make report generation functions globally accessible
 window.generateHourlyRecord = async function(date, hour) {
-    const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+    const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
     if (!uid) {
         showNotification('User not authenticated', 'error');
         return;
@@ -1525,7 +4243,7 @@ window.generateHourlyRecord = async function(date, hour) {
 };
 
 window.generateDailyReport = async function(date) {
-    const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+    const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
     if (!uid) {
         showNotification('User not authenticated', 'error');
         return;
@@ -1547,7 +4265,7 @@ window.generateDailyReport = async function(date) {
 };
 
 window.generateWeeklyReport = async function(isoWeekString) {
-    const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+    const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
     if (!uid) {
         showNotification('User not authenticated', 'error');
         return;
@@ -1569,7 +4287,7 @@ window.generateWeeklyReport = async function(isoWeekString) {
 };
 
 window.generateMonthlyReport = async function(year, month) {
-    const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+    const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
     if (!uid) {
         showNotification('User not authenticated', 'error');
         return;
@@ -1590,7 +4308,7 @@ window.generateMonthlyReport = async function(year, month) {
 };
 
 window.backfillWeeklyReports = async function() {
-    const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+    const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
     if (!uid) {
         showNotification('User not authenticated', 'error');
         return;
@@ -1607,7 +4325,7 @@ window.backfillWeeklyReports = async function() {
 };
 
 window.backfillMonthlyReports = async function() {
-    const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+    const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
     if (!uid) {
         showNotification('User not authenticated', 'error');
         return;
@@ -1623,7 +4341,7 @@ window.backfillMonthlyReports = async function() {
 };
 
 window.backfillHourlyRecords = async function(startDate, endDate) {
-    const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+    const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
     if (!uid) {
         showNotification('User not authenticated', 'error');
         return;
@@ -1641,7 +4359,7 @@ window.backfillHourlyRecords = async function(startDate, endDate) {
 };
 
 window.backfillDailyReports = async function() {
-    const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+    const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
     if (!uid) {
         showNotification('User not authenticated', 'error');
         return;
@@ -1789,7 +4507,7 @@ async function computeNextFeedingTime(uid) {
 // Update next feeding alert message in Monitoring section
 async function updateNextFeedingAlert() {
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
         if (!uid) {
             console.warn('No user UID found, cannot update next feeding alert');
             return;
@@ -2153,47 +4871,26 @@ export async function generateHourlyRecord(uid, date, hour) {
             }
         }
         
-        // 2. Aggregate feed used in this hour from schedules
-        let feedUsedKg = 0;
-        const schedulesRef = collection(db, `users/${uid}/feedingSchedules`);
-        const schedulesSnapshot = await getDocs(schedulesRef);
-        
-        schedulesSnapshot.forEach(doc => {
-            const schedule = doc.data();
-            if (schedule.scheduledTime && schedule.feedAmount) {
-                const scheduledTime = schedule.scheduledTime.seconds 
-                    ? new Date(schedule.scheduledTime.seconds * 1000)
-                    : new Date(schedule.scheduledTime);
-                
-                if (scheduledTime >= hourStart && scheduledTime <= hourEnd) {
-                    // Include if completed or if status doesn't exist
-                    if (!schedule.status || schedule.status === 'completed') {
-                        feedUsedKg += parseFloat(schedule.feedAmount) || 0;
-                    }
-                }
-            }
-        });
-        
         // Only write if we have at least one data point
-        if (temperatureAvg === null && phAvg === null && feedUsedKg === 0) {
+        if (temperatureAvg === null && phAvg === null) {
             console.log(`[HOURLY] No data for ${date} hour ${hour}, skipping write`);
             return null;
         }
         
         // Write to Firestore (idempotent)
+        // Path: users/{uid}/hourlyRecords/{date}/hours/{hour}
         const hourString = String(hour).padStart(2, '0');
-        const recordRef = doc(db, `users/${uid}/hourlyRecords/${date}/${hourString}`);
+        const recordRef = doc(db, `users/${uid}/hourlyRecords/${date}/hours/${hourString}`);
         const hourlyRecord = {
             hour: hourString,
             temperatureAvg: temperatureAvg,
             phAvg: phAvg,
-            feedUsedKg: feedUsedKg > 0 ? feedUsedKg : null,
             recordedAt: serverTimestamp(),
             source: "web"
         };
         
         await setDoc(recordRef, hourlyRecord, { merge: true });
-        console.log(`[HOURLY WRITE] Written hourly record ${date}/${hourString} to Firestore`);
+        console.log(`[HOURLY WRITE] Written hourly record ${date}/hours/${hourString} to Firestore`);
         
         return hourlyRecord;
         
@@ -2231,8 +4928,6 @@ export async function generateDailyReport(uid, date) {
         let temperatureCount = 0;
         let phSum = 0;
         let phCount = 0;
-        let totalFeedKg = 0;
-        let hasFeedData = false;
         let coverageHours = 0;
         
         hoursSnapshot.forEach(hourDoc => {
@@ -2256,12 +4951,6 @@ export async function generateDailyReport(uid, date) {
                 const count = record.phCount || 1;
                 phSum += phAvg * count;
                 phCount += count;
-            }
-            
-            // Aggregate feed (if present in hourly records)
-            if (record.feedUsedKg !== null && record.feedUsedKg !== undefined && record.feedUsedKg > 0) {
-                totalFeedKg += parseFloat(record.feedUsedKg) || 0;
-                hasFeedData = true;
             }
             
             // Count hours with actual data (count > 0)
@@ -2288,7 +4977,6 @@ export async function generateDailyReport(uid, date) {
             date: date,
             avgTemperature: avgTemperature,
             avgPh: avgPh,
-            totalFeedKg: hasFeedData ? totalFeedKg : null,
             coverageHours: coverageHours,
             isSeed: false,
             generatedAt: serverTimestamp(),
@@ -2342,7 +5030,6 @@ export async function generateWeeklyReport(uid, isoWeekString) {
         
         // Aggregate only from existing daily reports (non-seed)
         // NOTE: Mortality is harvest-based only, not included in time-based reports
-        let totalFeedKg = null;
         const temperatures = [];
         const phValues = [];
         let coverageDays = dailyReports.length;
@@ -2354,16 +5041,6 @@ export async function generateWeeklyReport(uid, isoWeekString) {
         }
         
         dailyReports.forEach(report => {
-            // Aggregate feed (daily reports now use totalFeedKg)
-            if (report.totalFeedKg !== null && report.totalFeedKg !== undefined) {
-                if (totalFeedKg === null) totalFeedKg = 0;
-                totalFeedKg += parseFloat(report.totalFeedKg) || 0;
-            } else if (report.feedUsedKg !== null && report.feedUsedKg !== undefined) {
-                // Backward compatibility with old field name
-                if (totalFeedKg === null) totalFeedKg = 0;
-                totalFeedKg += parseFloat(report.feedUsedKg) || 0;
-            }
-            
             // Collect temperature values (from daily averages)
             if (report.avgTemperature !== null && report.avgTemperature !== undefined) {
                 temperatures.push(parseFloat(report.avgTemperature));
@@ -2390,7 +5067,6 @@ export async function generateWeeklyReport(uid, isoWeekString) {
             week: isoWeekString,
             avgTemperature: avgTemperature,
             avgPh: avgPh,
-            totalFeedKg: totalFeedKg,
             coverageDays: coverageDays,
             generatedAt: serverTimestamp(),
             source: "web"
@@ -2447,7 +5123,6 @@ export async function generateMonthlyReport(uid, year, month) {
         
         // Aggregate only from existing daily reports (non-seed)
         // NOTE: Mortality is harvest-based only, not included in time-based reports
-        let totalFeedKg = null;
         const temperatures = [];
         const phValues = [];
         let coverageDays = dailyReports.length;
@@ -2459,16 +5134,6 @@ export async function generateMonthlyReport(uid, year, month) {
         }
         
         dailyReports.forEach(report => {
-            // Aggregate feed (daily reports now use totalFeedKg)
-            if (report.totalFeedKg !== null && report.totalFeedKg !== undefined) {
-                if (totalFeedKg === null) totalFeedKg = 0;
-                totalFeedKg += parseFloat(report.totalFeedKg) || 0;
-            } else if (report.feedUsedKg !== null && report.feedUsedKg !== undefined) {
-                // Backward compatibility with old field name
-                if (totalFeedKg === null) totalFeedKg = 0;
-                totalFeedKg += parseFloat(report.feedUsedKg) || 0;
-            }
-            
             // Collect temperature values (from daily averages)
             if (report.avgTemperature !== null && report.avgTemperature !== undefined) {
                 temperatures.push(parseFloat(report.avgTemperature));
@@ -2495,7 +5160,6 @@ export async function generateMonthlyReport(uid, year, month) {
             month: monthString,
             avgTemperature: avgTemperature,
             avgPh: avgPh,
-            totalFeedKg: totalFeedKg,
             coverageDays: coverageDays,
             generatedAt: serverTimestamp(),
             source: "web"
@@ -2602,6 +5266,11 @@ function reportCollectionRef(db, uid, period) {
 
 // Ensure report document exists with default analytics fields if missing
 async function ensureReportDoc(db, uid, period, id) {
+    if (IS_REPORT_FETCH_ONLY) {
+        console.log('[REPORT] Skipping ensureReportDoc in read-only dashboard context');
+        // Return the doc ref without writing
+        return reportDocRef(db, uid, period, id);
+    }
     try {
         const docRef = reportDocRef(db, uid, period, id);
         const docSnap = await getDoc(docRef);
@@ -2614,7 +5283,6 @@ async function ensureReportDoc(db, uid, period, id) {
                     date: id,
                     avgTemperature: null,
                     avgPh: null,
-                    totalFeedKg: null,
                     tempAvailability: 0,
                     phAvailability: 0,
                     bothSensorsAvailability: 0,
@@ -2633,7 +5301,6 @@ async function ensureReportDoc(db, uid, period, id) {
                     week: id,
                     avgTemperature: null,
                     avgPh: null,
-                    totalFeedKg: null,
                     tempAvailability: 0,
                     phAvailability: 0,
                     bothSensorsAvailability: 0,
@@ -2651,7 +5318,6 @@ async function ensureReportDoc(db, uid, period, id) {
                     month: id,
                     avgTemperature: null,
                     avgPh: null,
-                    totalFeedKg: null,
                     tempAvailability: 0,
                     phAvailability: 0,
                     bothSensorsAvailability: 0,
@@ -2726,7 +5392,9 @@ export async function generateDailySensorAnalytics(uid, date) {
         }
         
         // Write to Firestore (store in sensorAnalytics collection)
-        const analyticsRef = doc(db, "users", uid, "sensorAnalytics", "daily", date);
+        // Path: users/{uid}/sensorAnalytics/daily/{YYYY-MM-DD}
+        // daily is a collection, YYYY-MM-DD is a document
+        const analyticsRef = doc(db, `users/${uid}/sensorAnalytics/daily/${date}`);
         const analyticsData = {
             tempAvailability: temperatureAvailabilityHours,
             phAvailability: phAvailabilityHours,
@@ -2750,7 +5418,9 @@ export async function generateDailySensorAnalytics(uid, date) {
 export async function identifyDailySensorTrends(uid, date) {
     try {
         // Get current day sensor analytics document
-        const currentRef = doc(db, "users", uid, "sensorAnalytics", "daily", date);
+        // Path: users/{uid}/sensorAnalytics/daily/{YYYY-MM-DD}
+        // daily is a collection, YYYY-MM-DD is a document
+        const currentRef = doc(db, `users/${uid}/sensorAnalytics/daily/${date}`);
         const currentSnap = await getDoc(currentRef);
         
         if (!currentSnap.exists()) {
@@ -2762,7 +5432,9 @@ export async function identifyDailySensorTrends(uid, date) {
         
         // Get previous day (yesterday)
         const previousDate = getPreviousDate(date);
-        const previousRef = doc(db, "users", uid, "sensorAnalytics", "daily", previousDate);
+        // Path: users/{uid}/sensorAnalytics/daily/{YYYY-MM-DD}
+        // daily is a collection, YYYY-MM-DD is a document
+        const previousRef = doc(db, `users/${uid}/sensorAnalytics/daily/${previousDate}`);
         const previousSnap = await getDoc(previousRef);
         
         const previous = previousSnap.exists() 
@@ -2852,7 +5524,9 @@ export async function generateWeeklySensorAnalytics(uid, isoWeekString) {
         const totalNoDataHoursValue = totalNoDataHours;
         
         // Write to Firestore (store in sensorAnalytics collection)
-        const analyticsRef = doc(db, "users", uid, "sensorAnalytics", "weekly", isoWeekString);
+        // Path: users/{uid}/sensorAnalytics/weekly/{YYYY-WW}
+        // weekly is a collection, YYYY-WW is a document
+        const analyticsRef = doc(db, `users/${uid}/sensorAnalytics/weekly/${isoWeekString}`);
         const analyticsData = {
             tempAvailability: totalTempAvailability,
             phAvailability: totalPhAvailability,
@@ -2875,7 +5549,9 @@ export async function generateWeeklySensorAnalytics(uid, isoWeekString) {
 export async function identifyWeeklySensorTrends(uid, isoWeekString) {
     try {
         // Get current week sensor analytics document
-        const currentRef = doc(db, "users", uid, "sensorAnalytics", "weekly", isoWeekString);
+        // Path: users/{uid}/sensorAnalytics/weekly/{YYYY-WW}
+        // weekly is a collection, YYYY-WW is a document
+        const currentRef = doc(db, `users/${uid}/sensorAnalytics/weekly/${isoWeekString}`);
         const currentSnap = await getDoc(currentRef);
         
         if (!currentSnap.exists()) {
@@ -2892,7 +5568,9 @@ export async function identifyWeeklySensorTrends(uid, isoWeekString) {
             return null;
         }
         
-        const previousRef = doc(db, "users", uid, "sensorAnalytics", "weekly", previousWeek);
+        // Path: users/{uid}/sensorAnalytics/weekly/{YYYY-WW}
+        // weekly is a collection, YYYY-WW is a document
+        const previousRef = doc(db, `users/${uid}/sensorAnalytics/weekly/${previousWeek}`);
         const previousSnap = await getDoc(previousRef);
         
         const previous = previousSnap.exists() 
@@ -2982,7 +5660,9 @@ export async function generateMonthlySensorAnalytics(uid, year, month) {
         const totalNoDataHoursValue = totalNoDataHours;
         
         // Write to Firestore (store in sensorAnalytics collection)
-        const analyticsRef = doc(db, "users", uid, "sensorAnalytics", "monthly", monthString);
+        // Path: users/{uid}/sensorAnalytics/monthly/{YYYY-MM}
+        // monthly is a collection, YYYY-MM is a document
+        const analyticsRef = doc(db, `users/${uid}/sensorAnalytics/monthly/${monthString}`);
         const analyticsData = {
             tempAvailability: totalTempAvailability,
             phAvailability: totalPhAvailability,
@@ -3007,7 +5687,9 @@ export async function identifyMonthlySensorTrends(uid, year, month) {
         const monthString = `${year}-${String(month).padStart(2, '0')}`;
         
         // Get current month sensor analytics document
-        const currentRef = doc(db, "users", uid, "sensorAnalytics", "monthly", monthString);
+        // Path: users/{uid}/sensorAnalytics/monthly/{YYYY-MM}
+        // monthly is a collection, YYYY-MM is a document
+        const currentRef = doc(db, `users/${uid}/sensorAnalytics/monthly/${monthString}`);
         const currentSnap = await getDoc(currentRef);
         
         if (!currentSnap.exists()) {
@@ -3019,7 +5701,9 @@ export async function identifyMonthlySensorTrends(uid, year, month) {
         
         // Get previous month
         const previousMonth = getPreviousMonth(monthString);
-        const previousRef = doc(db, "users", uid, "sensorAnalytics", "monthly", previousMonth);
+        // Path: users/{uid}/sensorAnalytics/monthly/{YYYY-MM}
+        // monthly is a collection, YYYY-MM is a document
+        const previousRef = doc(db, `users/${uid}/sensorAnalytics/monthly/${previousMonth}`);
         const previousSnap = await getDoc(previousRef);
         
         const previous = previousSnap.exists() 
@@ -3105,6 +5789,10 @@ export async function backfillHourlyRecords(uid, startDate, endDate) {
 
 // Backfill daily reports from hourly records
 export async function backfillDailyReports(uid) {
+    if (IS_REPORT_FETCH_ONLY) {
+        console.log('[REPORT] Skipping backfillDailyReports in read-only dashboard context');
+        return { processed: 0, generated: 0 };
+    }
     try {
         console.log(`🔄 Starting daily report backfill for user ${uid}...`);
         
@@ -3285,6 +5973,14 @@ export async function backfillMonthlyReports(uid) {
 
 // Compute daily summary from raw data
 async function computeDailySummary(uid, dateString) {
+    if (HOURLY_TEST_MODE) {
+        console.log('[REPORT] Skipping computeDailySummary in HOURLY_TEST_MODE');
+        return null;
+    }
+    if (IS_REPORT_FETCH_ONLY) {
+        console.log('[REPORT] Skipping computeDailySummary in read-only dashboard context');
+        return null;
+    }
     try {
         const dayDate = new Date(dateString + 'T00:00:00');
         const dayStart = getStartOfDay(dayDate);
@@ -3293,25 +5989,6 @@ async function computeDailySummary(uid, dateString) {
         // Convert to Firestore Timestamp range
         const dayStartTimestamp = Math.floor(dayStart.getTime() / 1000);
         const dayEndTimestamp = Math.floor(dayEnd.getTime() / 1000);
-        
-        // Fetch feeding schedules (completed ones only, or any with feedAmount if no status)
-        const schedulesRef = collection(db, `users/${uid}/feedingSchedules`);
-        const schedulesSnapshot = await getDocs(schedulesRef);
-        
-        let feedUsed = 0;
-        schedulesSnapshot.forEach(doc => {
-            const schedule = doc.data();
-            // Include if: status is 'completed' OR (no status field and has feedAmount)
-            const isCompleted = schedule.status === 'completed' || 
-                               (!schedule.status && schedule.feedAmount);
-            
-            if (isCompleted && schedule.scheduledTime) {
-                const scheduledTime = timestampToDate(schedule.scheduledTime);
-                if (scheduledTime && isDateInDay(scheduledTime, dayDate)) {
-                    feedUsed += schedule.feedAmount || 0;
-                }
-            }
-        });
         
         // Fetch mortality logs
         const mortalityRef = collection(db, `users/${uid}/mortalityLogs`);
@@ -3369,7 +6046,6 @@ async function computeDailySummary(uid, dateString) {
         // Create daily report document
         const dailyReport = {
             date: dateString, // Store as string YYYY-MM-DD
-            feedUsed: feedUsed,
             mortality: mortality,
             avgTemperature: avgTemperature,
             avgPh: avgPh,
@@ -3398,6 +6074,14 @@ async function computeDailySummary(uid, dateString) {
 
 // Compute weekly summary from daily reports
 async function computeWeeklySummary(uid, weekString) {
+    if (HOURLY_TEST_MODE) {
+        console.log('[REPORT] Skipping computeWeeklySummary in HOURLY_TEST_MODE');
+        return null;
+    }
+    if (IS_REPORT_FETCH_ONLY) {
+        console.log('[REPORT] Skipping computeWeeklySummary in read-only dashboard context');
+        return null;
+    }
     try {
         const match = weekString.match(/(\d{4})-W(\d{2})/);
         if (!match) {
@@ -3441,14 +6125,12 @@ async function computeWeeklySummary(uid, weekString) {
         }
         
         // Aggregate data
-        let totalFeed = 0;
         let totalMortality = 0;
         const temperatures = [];
         const phValues = [];
         const scores = [];
         
         dailyReports.forEach(report => {
-            totalFeed += report.feedUsed || 0;
             totalMortality += report.mortality || 0;
             if (report.avgTemperature !== null && report.avgTemperature !== undefined) {
                 temperatures.push(report.avgTemperature);
@@ -3476,7 +6158,6 @@ async function computeWeeklySummary(uid, weekString) {
         const weeklyReport = {
             periodStart: weekStart,
             periodEnd: weekEnd,
-            totalFeed: totalFeed,
             mortality: totalMortality,
             avgTemperature: avgTemperature,
             avgPh: avgPh,
@@ -3505,6 +6186,14 @@ async function computeWeeklySummary(uid, weekString) {
 
 // Compute monthly summary from daily reports
 async function computeMonthlySummary(uid, monthString) {
+    if (HOURLY_TEST_MODE) {
+        console.log('[REPORT] Skipping computeMonthlySummary in HOURLY_TEST_MODE');
+        return null;
+    }
+    if (IS_REPORT_FETCH_ONLY) {
+        console.log('[REPORT] Skipping computeMonthlySummary in read-only dashboard context');
+        return null;
+    }
     try {
         const [year, month] = monthString.split('-').map(Number);
         const monthStart = new Date(year, month - 1, 1);
@@ -3530,14 +6219,12 @@ async function computeMonthlySummary(uid, monthString) {
         }
         
         // Aggregate data
-        let totalFeed = 0;
         let totalMortality = 0;
         const temperatures = [];
         const phValues = [];
         const scores = [];
         
         dailyReports.forEach(report => {
-            totalFeed += report.feedUsed || 0;
             totalMortality += report.mortality || 0;
             if (report.avgTemperature !== null && report.avgTemperature !== undefined) {
                 temperatures.push(report.avgTemperature);
@@ -3564,7 +6251,6 @@ async function computeMonthlySummary(uid, monthString) {
         // Create monthly report document
         const monthlyReport = {
             monthStart: monthStart,
-            totalFeed: totalFeed,
             totalMortality: totalMortality,
             avgTemperature: avgTemperature,
             avgPh: avgPh,
@@ -3654,6 +6340,10 @@ async function findEarliestDate(uid) {
 
 // Backfill weekly and monthly reports
 async function backfillAggregateReports(uid) {
+    if (IS_REPORT_FETCH_ONLY) {
+        console.log('[REPORT] Skipping backfillAggregateReports in read-only dashboard context');
+        return { processed: 0, generated: 0 };
+    }
     try {
         // Get all daily reports
         const dailyReportsRef = collection(db, `users/${uid}/dailyReports`);
@@ -3707,6 +6397,14 @@ async function backfillAggregateReports(uid) {
 
 // Update current day, week, and month summaries
 async function updateCurrentSummaries(uid) {
+    if (HOURLY_TEST_MODE) {
+        console.log('[REPORT] Skipping updateCurrentSummaries in HOURLY_TEST_MODE');
+        return;
+    }
+    if (IS_REPORT_FETCH_ONLY) {
+        console.log('[REPORT] Skipping updateCurrentSummaries in read-only dashboard context');
+        return;
+    }
     try {
         const today = new Date();
         
@@ -3739,7 +6437,7 @@ let isBackfilling = false;
 // Initialize summary computation system
 async function initializeSummarySystem() {
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
         if (!uid) {
             console.warn('No user UID found, cannot initialize summary system');
             return;
@@ -3754,7 +6452,7 @@ async function initializeSummarySystem() {
         setupPageFocusListener(uid);
         
         // Initial backfill (run in background, don't block)
-        if (!isBackfilling) {
+        if (!IS_REPORT_FETCH_ONLY && !isBackfilling) {
             isBackfilling = true;
             backfillDailyReports(uid).then(() => {
                 return backfillAggregateReports(uid);
@@ -3763,6 +6461,8 @@ async function initializeSummarySystem() {
             }).finally(() => {
                 isBackfilling = false;
             });
+        } else if (IS_REPORT_FETCH_ONLY) {
+            console.log('[REPORT] Skipping backfill in read-only dashboard context');
         }
         
         // Initial update of current summaries
@@ -3788,7 +6488,8 @@ function setupReportsSectionListener(uid) {
                     loadHourlyReport(),
                     loadDailySummaryReport(),
                     loadWeeklySummaryReport(),
-                    loadMonthlySummaryReport()
+                    loadMonthlySummaryReport(),
+                    loadProductionRecordsReport()
                 ]);
             } catch (error) {
                 console.error('Error updating summaries on Reports section open:', error);
@@ -3803,17 +6504,32 @@ function setupReportsSectionListener(uid) {
             mutations.forEach((mutation) => {
                 if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
                     if (reportsSection.classList.contains('active')) {
-                        console.log('Reports section became active, updating summaries...');
-                        updateCurrentSummaries(uid).then(() => {
-                            return Promise.all([
+                        console.log('Reports section became active, loading reports...');
+                        // Skip updateCurrentSummaries in read-only mode - just load reports
+                        if (!IS_REPORT_FETCH_ONLY) {
+                            updateCurrentSummaries(uid).then(() => {
+                                return Promise.all([
+                                    loadHourlyReport(),
+                                    loadDailySummaryReport(),
+                                    loadWeeklySummaryReport(),
+                                    loadMonthlySummaryReport(),
+                                    loadProductionRecordsReport()
+                                ]);
+                            }).catch(error => {
+                                console.error('Error updating summaries:', error);
+                            });
+                        } else {
+                            // Just load reports without updating summaries
+                            Promise.all([
                                 loadHourlyReport(),
                                 loadDailySummaryReport(),
                                 loadWeeklySummaryReport(),
-                                loadMonthlySummaryReport()
-                            ]);
-                        }).catch(error => {
-                            console.error('Error updating summaries:', error);
-                        });
+                                loadMonthlySummaryReport(),
+                                loadProductionRecordsReport()
+                            ]).catch(error => {
+                                console.error('Error loading reports:', error);
+                            });
+                        }
                     }
                 }
             });
@@ -3835,9 +6551,12 @@ function setupPageFocusListener(uid) {
         const now = Date.now();
         // Only update if it's been at least 5 minutes since last update
         if (now - lastUpdateTime >= UPDATE_INTERVAL) {
-            console.log('Page regained focus, updating current summaries...');
+            console.log('Page regained focus, loading reports...');
             try {
-                await updateCurrentSummaries(uid);
+                // Skip updateCurrentSummaries in read-only mode
+                if (!IS_REPORT_FETCH_ONLY) {
+                    await updateCurrentSummaries(uid);
+                }
                 lastUpdateTime = now;
                 
                 // Reload reports if Reports section is active
@@ -3847,11 +6566,12 @@ function setupPageFocusListener(uid) {
                         loadHourlyReport(),
                         loadDailySummaryReport(),
                         loadWeeklySummaryReport(),
-                        loadMonthlySummaryReport()
+                        loadMonthlySummaryReport(),
+                        loadProductionRecordsReport()
                     ]);
                 }
             } catch (error) {
-                console.error('Error updating summaries on page focus:', error);
+                console.error('Error loading reports on page focus:', error);
             }
         }
     });
@@ -3877,11 +6597,18 @@ function initializeReportSelectors() {
             dateSelector.value = selectedHourlyDate;
             dateSelector.addEventListener('change', async (e) => {
                 const newDate = e.target.value; // Format: "YYYY-MM-DD"
+                console.log('[HOURLY TRACE] Date picker change event triggered');
+                console.log('[HOURLY TRACE] Event target value (raw):', e.target.value);
+                console.log('[HOURLY TRACE] Current selectedHourlyDate:', selectedHourlyDate);
+                console.log('[HOURLY TRACE] Date format check - matches YYYY-MM-DD?', /^\d{4}-\d{2}-\d{2}$/.test(newDate));
                 if (newDate && newDate !== selectedHourlyDate) {
                     selectedHourlyDate = newDate;
-                    console.log('Hourly date filter changed to:', selectedHourlyDate);
+                    console.log('[HOURLY TRACE] selectedHourlyDate updated to:', selectedHourlyDate);
+                    console.log('[HOURLY TRACE] Calling loadHourlyReport()...');
                     await loadHourlyReport();
-        }
+                } else {
+                    console.log('[HOURLY TRACE] Date unchanged or empty, skipping loadHourlyReport()');
+                }
             });
             console.log('Hourly date selector initialized with:', selectedHourlyDate);
         }
@@ -3947,38 +6674,77 @@ function formatTrend(trend) {
 
 // Load Daily Summary Report into table (with month filtering)
 async function loadDailySummaryReport() {
-    try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
-        if (!uid) return;
-        
-        const dailyReportsRef = collection(db, `users/${uid}/dailyReports`);
-        const q = query(dailyReportsRef, orderBy('date', 'desc'));
-        const querySnapshot = await getDocs(q);
-        
-        const tableBody = document.getElementById('dailySummaryTableBody');
-        if (!tableBody) return;
+    console.log('[REPORT] loadDailySummaryReport start');
+    const tableBody = document.getElementById('dailySummaryTableBody'); const loadingEl = document.getElementById('daily-loading'); if (!tableBody) return; if (loadingEl) { loadingEl.classList.remove('hidden'); } tableBody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem;">Loading reports...</td></tr>'; try { const uid = window.RUNTIME_CONTEXT?.runtimeUid || null; if (!uid) { if (loadingEl) loadingEl.classList.add('hidden'); tableBody.innerHTML = `<tr><td colspan="8" class="error-text">No user ID available</td></tr>`; return; } const dailyReportsRef = collection(db, `users/${uid}/dailyReports`);
+        // Query without orderBy first to avoid errors if 'date' field doesn't exist
+        // We'll sort client-side after ensuring date fields are set
+        let querySnapshot;
+        try {
+            const q = query(dailyReportsRef, orderBy('date', 'desc'));
+            querySnapshot = await getDocs(q);
+        } catch (error) {
+            // If orderBy fails (field doesn't exist), query without it
+            console.warn('[DAILY] orderBy failed, querying without orderBy:', error);
+            querySnapshot = await getDocs(dailyReportsRef);
+        }
         
         // Filter by selected month (client-side filtering)
         const filteredReports = [];
+        let firstDocLogged = false;
         querySnapshot.forEach(doc => {
             const report = doc.data();
+            // Log first document schema for verification (temporary diagnostic)
+            if (!firstDocLogged) {
+                console.log('[REPORT] loadDailySummaryReport: Sample Firestore doc:', {
+                    id: doc.id,
+                    fields: Object.keys(report),
+                    hasWaterQuality: 'waterQuality' in report,
+                    avgTemperature: report.avgTemperature,
+                    avgPh: report.avgPh,
+                    coverageHours: report.coverageHours
+                });
+                firstDocLogged = true;
+            }
+            // Use document ID as fallback if date field doesn't exist
+            const dateValue = report.date || doc.id;
+            
             // Filter: date.startsWith(selectedReportMonth)
-            if (selectedReportMonth && report.date && report.date.startsWith(selectedReportMonth)) {
+            if (selectedReportMonth && dateValue && dateValue.startsWith(selectedReportMonth)) {
+                // Ensure report has date field for consistency
+                if (!report.date) {
+                    report.date = dateValue;
+                }
                 filteredReports.push(report);
             } else if (!selectedReportMonth) {
                 // If no month selected, show all (backward compatibility)
+                // Ensure report has date field for consistency
+                if (!report.date) {
+                    report.date = dateValue;
+                }
                 filteredReports.push(report);
             }
+        });
+        
+        // Sort by date descending (client-side, in case orderBy failed)
+        filteredReports.sort((a, b) => {
+            const dateA = a.date || '';
+            const dateB = b.date || '';
+            return dateB.localeCompare(dateA); // Descending order
         });
         
         // Limit to 31 days (max days in a month)
         const limitedReports = filteredReports.slice(0, 31);
         
+        // EXIT LOADING STATE
+        if (loadingEl) {
+            loadingEl.classList.add('hidden');
+        }
+        
         if (limitedReports.length === 0) {
             const message = selectedReportMonth 
                 ? 'No daily summary data available for selected month' 
                 : 'No daily summary data available';
-            tableBody.innerHTML = `<tr><td colspan="5" class="no-data-text">${message}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="8" class="no-data-text">${message}</td></tr>`;
             // Clear charts if no data
             clearDailyCharts();
             return;
@@ -3987,7 +6753,15 @@ async function loadDailySummaryReport() {
         // Load sensor analytics for trend data
         const analyticsPromises = limitedReports.map(async (report) => {
             try {
-                const analyticsRef = doc(db, "users", uid, "sensorAnalytics", "daily", report.date);
+                // Ensure date field exists (use doc.id if missing, but we already set it above)
+                const dateValue = report.date;
+                if (!dateValue) {
+                    console.warn('[DAILY] Report missing date field, skipping analytics');
+                    return null;
+                }
+                // Path: users/{uid}/sensorAnalytics/daily/{YYYY-MM-DD}
+                // daily is a collection, YYYY-MM-DD is a document
+                const analyticsRef = doc(db, `users/${uid}/sensorAnalytics/daily/${dateValue}`);
                 const analyticsSnap = await getDoc(analyticsRef);
                 return analyticsSnap.exists() ? analyticsSnap.data() : null;
             } catch (error) {
@@ -3999,37 +6773,46 @@ async function loadDailySummaryReport() {
         const analyticsData = await Promise.all(analyticsPromises);
         
         // Extract trend data from sensor analytics
-        reportRowsState.dailyRows = limitedReports.map((report, index) => {
-            const date = new Date(report.date + 'T00:00:00');
-            const analytics = analyticsData[index];
-            return {
-                date: date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
-                feedUsed: report.totalFeedKg !== null && report.totalFeedKg !== undefined ? report.totalFeedKg : (report.feedUsedKg || null),
-                avgTemperature: report.avgTemperature !== null && report.avgTemperature !== undefined ? report.avgTemperature : null,
-                avgPh: report.avgPh !== null && report.avgPh !== undefined ? report.avgPh : null,
-                waterQuality: report.waterQuality || null,
-                coverageHours: report.coverageHours || null,
-                isSeed: report.isSeed === true,
-                trends: analytics ? {
-                    tempTrend: analytics.tempTrend || null,
-                    phTrend: analytics.phTrend || null,
-                    bothSensorsTrend: analytics.bothSensorsTrend || null
-                } : null
-            };
-        });
+        reportRowsState.dailyRows = limitedReports
+            .map((report, index) => {
+                // Ensure date field exists
+                const dateValue = report.date;
+                if (!dateValue) {
+                    console.warn('[DAILY] Report missing date field in mapping, skipping');
+                    return null;
+                }
+                const date = new Date(dateValue + 'T00:00:00');
+                if (isNaN(date.getTime())) {
+                    console.warn(`[DAILY] Invalid date format: ${dateValue}, skipping`);
+                    return null;
+                }
+                const analytics = analyticsData[index];
+                return {
+                    date: date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+                    avgTemperature: report.avgTemperature !== null && report.avgTemperature !== undefined ? report.avgTemperature : null,
+                    avgPh: report.avgPh !== null && report.avgPh !== undefined ? report.avgPh : null,
+                    waterQuality: (() => { const t = report.avgTemperature; const p = report.avgPh; if (t != null && p != null) { const tempOk = t >= 24 && t <= 30; const phOk = p >= 6.5 && p <= 8.5; return (tempOk && phOk) ? 'Good' : ((tempOk || phOk) ? 'Fair' : 'Poor'); } return 'N/A'; })(),
+                    coverageHours: report.coverageHours || null,
+                    isSeed: report.isSeed === true,
+                    trends: analytics ? {
+                        tempTrend: analytics.tempTrend || null,
+                        phTrend: analytics.phTrend || null,
+                        bothSensorsTrend: analytics.bothSensorsTrend || null
+                    } : null
+                };
+            })
+            .filter(row => row !== null); // Remove null entries
         
         tableBody.innerHTML = '';
         reportRowsState.dailyRows.forEach(row => {
             const tr = document.createElement('tr');
             // Check if this is a seed document with no real data
             const isSeedEmpty = row.isSeed && 
-                (row.feedUsed === null || row.feedUsed === 0) && 
                 (row.avgTemperature === null || row.avgTemperature === 0) && 
                 (row.avgPh === null || row.avgPh === 0);
             
             tr.innerHTML = `
                 <td>${row.date}</td>
-                <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (row.feedUsed !== null && row.feedUsed !== 0 ? row.feedUsed.toFixed(1) + ' kg' : '--')}</td>
                 <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (row.avgTemperature !== null && row.avgTemperature !== 0 ? row.avgTemperature.toFixed(1) + '°C' : '--')}</td>
                 <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (row.avgPh !== null && row.avgPh !== 0 ? row.avgPh.toFixed(2) : '--')}</td>
                 <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (row.waterQuality || '--')}</td>
@@ -4042,11 +6825,16 @@ async function loadDailySummaryReport() {
         
         // Render charts after table is populated
         renderDailyCharts(limitedReports);
-        } catch (error) {
-        console.error('Error loading daily summary report:', error);
+        console.log('[REPORT] loadDailySummaryReport end rows=' + reportRowsState.dailyRows.length);
+    } catch (error) {
+        // EXIT LOADING STATE on error
+        if (loadingEl) {
+            loadingEl.classList.add('hidden');
+        }
+        console.error('[REPORT] loadDailySummaryReport error:', error);
         const tableBody = document.getElementById('dailySummaryTableBody');
         if (tableBody) {
-            tableBody.innerHTML = '<tr><td colspan="8" class="no-data-text">Error loading daily summary</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="8" class="error-text">Failed to load daily summary</td></tr>';
         }
         clearDailyCharts();
     }
@@ -4054,26 +6842,72 @@ async function loadDailySummaryReport() {
 
 // Load Weekly Summary Report into table (with month filtering)
 async function loadWeeklySummaryReport() {
+    console.log('[REPORT] loadWeeklySummaryReport start');
+    const tableBody = document.getElementById('weeklySummaryTableBody');
+    const loadingEl = document.getElementById('weekly-loading');
+    
+    if (!tableBody) {
+        console.warn('[REPORT] loadWeeklySummaryReport: tableBody not found');
+        return;
+    }
+    
+    // ENTER LOADING STATE
+    if (loadingEl) {
+        loadingEl.classList.remove('hidden');
+    }
+    tableBody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem;">Loading reports...</td></tr>';
+    
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
-        if (!uid) return;
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+        if (!uid) {
+            // EXIT LOADING STATE
+            if (loadingEl) loadingEl.classList.add('hidden');
+            tableBody.innerHTML = `<tr><td colspan="8" class="error-text">No user ID available</td></tr>`;
+            return;
+        }
         
         const weeklyReportsRef = collection(db, `users/${uid}/weeklyReports`);
-        const q = query(weeklyReportsRef, orderBy('week', 'desc'), limit(12));
-        const querySnapshot = await getDocs(q);
-        
-        const tableBody = document.getElementById('weeklySummaryTableBody');
-        if (!tableBody) return;
+        // Query without orderBy first to avoid errors if 'week' field doesn't exist
+        // We'll sort client-side after ensuring week fields are set
+        let querySnapshot;
+        try {
+            const q = query(weeklyReportsRef, orderBy('week', 'desc'), limit(12));
+            querySnapshot = await getDocs(q);
+        } catch (error) {
+            // If orderBy fails (field doesn't exist), query without it
+            console.warn('[WEEKLY] orderBy failed, querying without orderBy:', error);
+            querySnapshot = await getDocs(query(weeklyReportsRef, limit(12)));
+        }
         
         // Filter weekly reports by selected month if applicable
         const filteredReports = [];
+        let firstDocLogged = false;
         querySnapshot.forEach(doc => {
             const report = doc.data();
+            // Log first document schema for verification (temporary diagnostic)
+            if (!firstDocLogged) {
+                console.log('[REPORT] loadWeeklySummaryReport: Sample Firestore doc:', {
+                    id: doc.id,
+                    fields: Object.keys(report),
+                    week: report.week,
+                    avgTemperature: report.avgTemperature,
+                    avgPh: report.avgPh,
+                    coverageDays: report.coverageDays
+                });
+                firstDocLogged = true;
+            }
+            // Use document ID as fallback if week field doesn't exist
+            const weekStr = report.week || doc.id;
+            
+            // Ensure report has week field for consistency
+            if (!report.week && weekStr) {
+                report.week = weekStr;
+            }
+            
             if (!selectedReportMonth) {
                 filteredReports.push(report);
             } else {
                 // Parse ISO week string (YYYY-WW) to check if it overlaps with selected month
-                const weekStr = report.week || doc.id;
                 const match = weekStr.match(/(\d{4})-W(\d{2})/);
                 if (match) {
                     const year = parseInt(match[1]);
@@ -4098,6 +6932,11 @@ async function loadWeeklySummaryReport() {
             }
         });
         
+        // EXIT LOADING STATE
+        if (loadingEl) {
+            loadingEl.classList.add('hidden');
+        }
+        
         if (filteredReports.length === 0) {
             const message = selectedReportMonth 
                 ? 'No weekly summary data available for selected month' 
@@ -4111,7 +6950,9 @@ async function loadWeeklySummaryReport() {
         const analyticsPromises = filteredReports.map(async (report) => {
             try {
                 const weekStr = report.week || '';
-                const analyticsRef = doc(db, "users", uid, "sensorAnalytics", "weekly", weekStr);
+                // Path: users/{uid}/sensorAnalytics/weekly/{YYYY-WW}
+                // weekly is a collection, YYYY-WW is a document
+                const analyticsRef = doc(db, `users/${uid}/sensorAnalytics/weekly/${weekStr}`);
                 const analyticsSnap = await getDoc(analyticsRef);
                 return analyticsSnap.exists() ? analyticsSnap.data() : null;
             } catch (error) {
@@ -4140,7 +6981,6 @@ async function loadWeeklySummaryReport() {
             return {
                 period: periodStr,
                 week: weekStr,
-                totalFeed: report.totalFeedKg !== null && report.totalFeedKg !== undefined ? report.totalFeedKg : (report.totalFeed || null),
                 avgPh: report.avgPh !== null && report.avgPh !== undefined ? report.avgPh : null,
                 avgTemperature: report.avgTemperature !== null && report.avgTemperature !== undefined ? report.avgTemperature : null,
                 coverageDays: report.coverageDays || 0,
@@ -4158,14 +6998,12 @@ async function loadWeeklySummaryReport() {
             const tr = document.createElement('tr');
             // Check if this is a seed document with no real data
             const isSeedEmpty = row.isSeed && 
-                (row.totalFeed === null || row.totalFeed === 0) && 
                 (row.avgTemperature === null || row.avgTemperature === 0) && 
                 (row.avgPh === null || row.avgPh === 0) &&
                 (row.coverageDays === 0);
             
             tr.innerHTML = `
                 <td>${row.period}</td>
-                <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (row.totalFeed !== null && row.totalFeed !== 0 ? row.totalFeed.toFixed(1) + ' kg' : '--')}</td>
                 <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (row.avgPh !== null && row.avgPh !== 0 ? row.avgPh.toFixed(2) : '--')}</td>
                 <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (row.avgTemperature !== null && row.avgTemperature !== 0 ? row.avgTemperature.toFixed(1) + '°C' : '--')}</td>
                 <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (row.coverageDays || 0) + ' days'}</td>
@@ -4178,11 +7016,17 @@ async function loadWeeklySummaryReport() {
         
         // Render charts after table is populated
         renderWeeklyCharts(filteredReports);
+        console.log('[REPORT] loadWeeklySummaryReport end rows=' + reportRowsState.weeklyRows.length);
     } catch (error) {
-        console.error('Error loading weekly summary report:', error);
+        // EXIT LOADING STATE on error
+        const loadingEl = document.getElementById('weekly-loading');
+        if (loadingEl) {
+            loadingEl.classList.add('hidden');
+        }
+        console.error('[REPORT] loadWeeklySummaryReport error:', error);
         const tableBody = document.getElementById('weeklySummaryTableBody');
         if (tableBody) {
-            tableBody.innerHTML = '<tr><td colspan="8" class="no-data-text">Error loading weekly summary</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="8" class="error-text">Failed to load weekly summary</td></tr>';
         }
         clearWeeklyCharts();
     }
@@ -4190,32 +7034,93 @@ async function loadWeeklySummaryReport() {
 
 // Load Monthly Summary Report into table (with month filtering)
 async function loadMonthlySummaryReport() {
+    console.log('[REPORT] loadMonthlySummaryReport start');
+    const tableBody = document.getElementById('monthlySummaryTableBody');
+    const loadingEl = document.getElementById('monthly-loading');
+    
+    if (!tableBody) {
+        console.warn('[REPORT] loadMonthlySummaryReport: tableBody not found');
+        return;
+    }
+    
+    // ENTER LOADING STATE
+    if (loadingEl) {
+        loadingEl.classList.remove('hidden');
+    }
+    tableBody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem;">Loading reports...</td></tr>';
+    
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
-        if (!uid) return;
-        
-        const tableBody = document.getElementById('monthlySummaryTableBody');
-        if (!tableBody) return;
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+        if (!uid) {
+            // EXIT LOADING STATE
+            if (loadingEl) loadingEl.classList.add('hidden');
+            tableBody.innerHTML = `<tr><td colspan="8" class="error-text">No user ID available</td></tr>`;
+            return;
+        }
         
         // Load monthly reports (use month field, not monthStart)
         const monthlyReportsRef = collection(db, `users/${uid}/monthlyReports`);
-        // Don't limit when filtering by year - load all months for that year
-        const q = selectedReportYear 
-            ? query(monthlyReportsRef, orderBy('month', 'desc')) 
-            : query(monthlyReportsRef, orderBy('month', 'desc'), limit(12));
-        const querySnapshot = await getDocs(q);
+        // Query without orderBy first to avoid errors if 'month' field doesn't exist
+        // We'll sort client-side after ensuring month fields are set
+        let querySnapshot;
+        try {
+            const q = selectedReportYear 
+                ? query(monthlyReportsRef, orderBy('month', 'desc')) 
+                : query(monthlyReportsRef, orderBy('month', 'desc'), limit(12));
+            querySnapshot = await getDocs(q);
+        } catch (error) {
+            // If orderBy fails (field doesn't exist), query without it
+            console.warn('[MONTHLY] orderBy failed, querying without orderBy:', error);
+            querySnapshot = await getDocs(
+                selectedReportYear 
+                    ? monthlyReportsRef 
+                    : query(monthlyReportsRef, limit(12))
+            );
+        }
         
         // Filter by selected year if applicable
         const filteredReports = [];
+        let firstDocLogged = false;
         querySnapshot.forEach(doc => {
             const report = doc.data();
-            if (report.month) {
-                const reportYear = report.month.split('-')[0]; // Extract year from "YYYY-MM"
+            // Log first document schema for verification (temporary diagnostic)
+            if (!firstDocLogged) {
+                console.log('[REPORT] loadMonthlySummaryReport: Sample Firestore doc:', {
+                    id: doc.id,
+                    fields: Object.keys(report),
+                    month: report.month,
+                    avgTemperature: report.avgTemperature,
+                    avgPh: report.avgPh,
+                    coverageDays: report.coverageDays
+                });
+                firstDocLogged = true;
+            }
+            // Use document ID as fallback if month field doesn't exist
+            const monthValue = report.month || doc.id;
+            
+            if (monthValue) {
+                const reportYear = monthValue.split('-')[0]; // Extract year from "YYYY-MM"
                 if (!selectedReportYear || reportYear === selectedReportYear) {
-                filteredReports.push(report);
+                    // Ensure report has month field for consistency
+                    if (!report.month) {
+                        report.month = monthValue;
+                    }
+                    filteredReports.push(report);
                 }
             }
         });
+        
+        // Sort by month descending (client-side, in case orderBy failed)
+        filteredReports.sort((a, b) => {
+            const monthA = a.month || '';
+            const monthB = b.month || '';
+            return monthB.localeCompare(monthA); // Descending order
+        });
+        
+        // EXIT LOADING STATE
+        if (loadingEl) {
+            loadingEl.classList.add('hidden');
+        }
         
         if (filteredReports.length === 0) {
             const message = selectedReportYear 
@@ -4230,7 +7135,9 @@ async function loadMonthlySummaryReport() {
         const analyticsPromises = filteredReports.map(async (report) => {
             try {
                 const monthStr = report.month || '';
-                const analyticsRef = doc(db, "users", uid, "sensorAnalytics", "monthly", monthStr);
+                // Path: users/{uid}/sensorAnalytics/monthly/{YYYY-MM}
+                // monthly is a collection, YYYY-MM is a document
+                const analyticsRef = doc(db, `users/${uid}/sensorAnalytics/monthly/${monthStr}`);
                 const analyticsSnap = await getDoc(analyticsRef);
                 return analyticsSnap.exists() ? analyticsSnap.data() : null;
             } catch (error) {
@@ -4251,7 +7158,6 @@ async function loadMonthlySummaryReport() {
             return {
                 month: monthStr,
                 monthKey: report.month,
-                totalFeed: report.totalFeedKg !== null && report.totalFeedKg !== undefined ? report.totalFeedKg : (report.totalFeed || null),
                 avgPh: report.avgPh !== null && report.avgPh !== undefined ? report.avgPh : null,
                 avgTemperature: report.avgTemperature !== null && report.avgTemperature !== undefined ? report.avgTemperature : null,
                 coverageDays: report.coverageDays || 0,
@@ -4269,14 +7175,12 @@ async function loadMonthlySummaryReport() {
             const row = document.createElement('tr');
             // Check if this is a seed document with no real data
             const isSeedEmpty = r.isSeed && 
-                (r.totalFeed === null || r.totalFeed === 0) && 
                 (r.avgTemperature === null || r.avgTemperature === 0) && 
                 (r.avgPh === null || r.avgPh === 0) &&
                 (r.coverageDays === 0);
             
             row.innerHTML = `
                 <td>${r.month}</td>
-                <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (r.totalFeed !== null && r.totalFeed !== 0 ? r.totalFeed.toFixed(1) + ' kg' : '--')}</td>
                 <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (r.avgPh !== null && r.avgPh !== 0 ? r.avgPh.toFixed(2) : '--')}</td>
                 <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (r.avgTemperature !== null && r.avgTemperature !== 0 ? r.avgTemperature.toFixed(1) + '°C' : '--')}</td>
                 <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (r.coverageDays || 0) + ' days'}</td>
@@ -4289,11 +7193,17 @@ async function loadMonthlySummaryReport() {
         
         // Render charts after table is populated
         renderMonthlyCharts(filteredReports);
+        console.log('[REPORT] loadMonthlySummaryReport end rows=' + reportRowsState.monthlyRows.length);
     } catch (error) {
-        console.error('Error loading monthly summary report:', error);
+        // EXIT LOADING STATE on error
+        const loadingEl = document.getElementById('monthly-loading');
+        if (loadingEl) {
+            loadingEl.classList.add('hidden');
+        }
+        console.error('[REPORT] loadMonthlySummaryReport error:', error);
         const tableBody = document.getElementById('monthlySummaryTableBody');
         if (tableBody) {
-            tableBody.innerHTML = '<tr><td colspan="8" class="no-data-text">Error loading monthly summary</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="8" class="error-text">Failed to load monthly summary</td></tr>';
         }
         clearMonthlyCharts();
     }
@@ -4309,7 +7219,7 @@ function clearDailyCharts() {
     Object.values(chartInstances.daily).forEach(chart => {
         if (chart) chart.destroy();
     });
-    chartInstances.daily = { temperature: null, ph: null, feed: null };
+    chartInstances.daily = { temperature: null, ph: null };
 }
 
 // Clear weekly charts
@@ -4317,7 +7227,7 @@ function clearWeeklyCharts() {
     Object.values(chartInstances.weekly).forEach(chart => {
         if (chart) chart.destroy();
     });
-    chartInstances.weekly = { temperature: null, ph: null, feed: null };
+    chartInstances.weekly = { temperature: null, ph: null };
 }
 
 // Clear monthly charts
@@ -4325,7 +7235,7 @@ function clearMonthlyCharts() {
     Object.values(chartInstances.monthly).forEach(chart => {
         if (chart) chart.destroy();
     });
-    chartInstances.monthly = { temperature: null, ph: null, feed: null };
+    chartInstances.monthly = { temperature: null, ph: null };
 }
 
 // Clear hourly charts
@@ -4333,26 +7243,61 @@ function clearHourlyCharts() {
     Object.values(chartInstances.hourly).forEach(chart => {
         if (chart) chart.destroy();
     });
-    chartInstances.hourly = { temperature: null, ph: null, feed: null };
+    chartInstances.hourly = { temperature: null, ph: null };
 }
 
 // Load Hourly Report into table
 async function loadHourlyReport() {
+    console.log('[REPORT] loadHourlyReport start');
+    const tableBody = document.getElementById('hourlySummaryTableBody');
+    const loadingEl = document.getElementById('hourly-loading');
+    
+    if (!tableBody) {
+        console.warn('[REPORT] loadHourlyReport: tableBody not found');
+        return;
+    }
+    
+    // ENTER LOADING STATE
+    if (loadingEl) {
+        loadingEl.classList.remove('hidden');
+    }
+    tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem;">Loading hourly data...</td></tr>';
+    
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
-        if (!uid) return;
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+        if (!uid) {
+            console.warn('[REPORT] loadHourlyReport: No UID available');
+            // EXIT LOADING STATE
+            if (loadingEl) loadingEl.classList.add('hidden');
+            tableBody.innerHTML = `<tr><td colspan="4" class="error-text">No user ID available</td></tr>`;
+            return;
+        }
         
         // Use selected date, default to today if not set
         const dateStr = selectedHourlyDate || formatDateString(new Date());
         
-        // Read hourly records for selected date
-        const hoursRef = collection(db, `users/${uid}/hourlyRecords/${dateStr}/hours`);
-        const hoursSnapshot = await getDocs(query(hoursRef, orderBy('hour', 'asc')));
+        // Read hourly records for selected date from the correct Firestore path
+        // Path: users/{uid}/hourlyRecords/{date}/hours/{hour}
+        const computedPath = `users/${uid}/hourlyRecords/${dateStr}/hours`;
+        const hoursRef = collection(db, computedPath);
         
-        const tableBody = document.getElementById('hourlySummaryTableBody');
-        if (!tableBody) return;
+        // Try with orderBy first, fallback to query without orderBy if field doesn't exist
+        let hoursSnapshot;
+        try {
+            hoursSnapshot = await getDocs(query(hoursRef, orderBy('hour', 'asc')));
+        } catch (error) {
+            console.warn('[HOURLY] orderBy failed, querying without orderBy:', error);
+            hoursSnapshot = await getDocs(hoursRef);
+        }
         
+        // EXIT LOADING STATE
+        if (loadingEl) {
+            loadingEl.classList.add('hidden');
+        }
+        
+        // Process results
         if (hoursSnapshot.empty) {
+            console.log(`[HOURLY] No hourly records found for ${dateStr}`);
             const dateObj = new Date(dateStr + 'T00:00:00');
             const dateDisplay = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
             tableBody.innerHTML = `<tr><td colspan="4" class="no-data-text">No hourly data available for ${dateDisplay}</td></tr>`;
@@ -4360,10 +7305,37 @@ async function loadHourlyReport() {
             return;
         }
         
+        console.log(`[HOURLY] Found ${hoursSnapshot.size} hourly records`);
+        
         const hourlyReports = [];
+        let seedCount = 0;
+        let nonSeedCount = 0;
         hoursSnapshot.forEach(doc => {
-            hourlyReports.push(doc.data());
+            const data = doc.data();
+            // Ensure hour field exists (use document ID as fallback)
+            if (!data.hour) {
+                data.hour = doc.id;
+            }
+            hourlyReports.push(data);
+            if (data.isSeed === true) {
+                seedCount++;
+            } else {
+                nonSeedCount++;
+            }
+            console.log(`[HOURLY] Hour ${data.hour}: temp=${data.temperatureAvg}, pH=${data.phAvg}, isSeed=${data.isSeed}`);
         });
+        
+        // Sort by hour ascending (client-side, in case orderBy failed)
+        hourlyReports.sort((a, b) => {
+            const hourA = parseInt(a.hour || '0', 10);
+            const hourB = parseInt(b.hour || '0', 10);
+            return hourA - hourB;
+        });
+        
+        console.log('[HOURLY TRACE] Total documents processed:', hourlyReports.length);
+        console.log('[HOURLY TRACE] Seed documents count:', seedCount);
+        console.log('[HOURLY TRACE] Non-seed documents count:', nonSeedCount);
+        console.log('[HOURLY TRACE] Note: isSeed documents are NOT filtered from query - they are included in results');
         
         // Store rows in memory for export
         reportRowsState.hourlyRows = hourlyReports.map(report => {
@@ -4371,7 +7343,6 @@ async function loadHourlyReport() {
                 hour: report.hour || '00',
                 temperature: report.temperatureAvg !== null && report.temperatureAvg !== undefined ? report.temperatureAvg : null,
                 ph: report.phAvg !== null && report.phAvg !== undefined ? report.phAvg : null,
-                feed: report.feedUsedKg !== null && report.feedUsedKg !== undefined ? report.feedUsedKg : null,
                 isSeed: report.isSeed === true
             };
         });
@@ -4381,35 +7352,269 @@ async function loadHourlyReport() {
             const tr = document.createElement('tr');
             const isSeedEmpty = row.isSeed && 
                 (row.temperature === null || row.temperature === 0) && 
-                (row.ph === null || row.ph === 0) && 
-                (row.feed === null || row.feed === 0);
+                (row.ph === null || row.ph === 0);
             
             tr.innerHTML = `
                 <td>${row.hour}:00</td>
                 <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (row.temperature !== null && row.temperature !== 0 ? row.temperature.toFixed(1) + '°C' : '--')}</td>
                 <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (row.ph !== null && row.ph !== 0 ? row.ph.toFixed(2) : '--')}</td>
-                <td>${isSeedEmpty ? '<span class="no-data-text">No data yet</span>' : (row.feed !== null && row.feed !== 0 ? row.feed.toFixed(1) + ' kg' : '--')}</td>
             `;
             tableBody.appendChild(tr);
         });
         
         // Render charts after table is populated
         renderHourlyCharts(hourlyReports);
+        console.log('[REPORT] loadHourlyReport end rows=' + reportRowsState.hourlyRows.length);
+        
+        console.log(`[HOURLY] Successfully loaded ${hourlyReports.length} hourly records`);
         
     } catch (error) {
-        console.error('Error loading hourly report:', error);
+        // EXIT LOADING STATE on error
+        if (loadingEl) {
+            loadingEl.classList.add('hidden');
+        }
+        console.error('[REPORT] loadHourlyReport error:', error);
         const tableBody = document.getElementById('hourlySummaryTableBody');
         if (tableBody) {
-            tableBody.innerHTML = '<tr><td colspan="5" class="no-data-text">Error loading hourly data</td></tr>';
+            tableBody.innerHTML = `<tr><td colspan="4" class="error-text">Failed to load hourly data</td></tr>`;
         }
         clearHourlyCharts();
     }
 }
 
+// ============================================================
+// PRODUCTION MONITORING FIRESTORE RECORDING
+// ============================================================
+// Records calculated production metrics to Firestore
+// Firestore Path: users/{uid}/productionRecords/{autoId}
+async function recordProductionMetrics(uid, metrics) {
+    if (!uid) {
+        console.warn("[PRODUCTION] No UID provided, cannot save to Firestore");
+        return;
+    }
+    
+    try {
+        const ref = collection(db, `users/${uid}/productionRecords`);
+        
+        const docRef = await addDoc(ref, {
+            fingerlingsCount: metrics.fingerlingsCount,
+            harvestedCount: metrics.harvestedCount,
+            deathsCount: metrics.deathsCount,
+            survivalRate: metrics.survivalRate,
+            lossRate: metrics.lossRate,
+            profitRate: metrics.profitRate,
+            startMonth: metrics.startMonth,
+            endMonth: metrics.endMonth,
+            createdAt: serverTimestamp()
+        });
+        
+        console.log("[PRODUCTION] Production record saved to Firestore");
+        console.log(`[PRODUCTION] Document ID: ${docRef.id}`);
+        console.log(`[PRODUCTION] Path: users/${uid}/productionRecords/${docRef.id}`);
+    } catch (error) {
+        console.error("[PRODUCTION] Error saving production record to Firestore:", error);
+        throw error; // Re-throw so caller can handle it
+    }
+}
+
+// Make function globally accessible
+window.recordProductionMetrics = recordProductionMetrics;
+
+// ============================================================
+// PRODUCTION RECORDS REPORT (Harvest Mortality Log)
+// ============================================================
+
+// Load Production Records from Firestore and display in table
+async function loadProductionRecordsReport() {
+    try {
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+        if (!uid) {
+            console.warn('[PRODUCTION RECORDS] No UID found');
+            return;
+        }
+        
+        const loadingEl = document.getElementById('production-loading');
+        const tableBody = document.getElementById('productionRecordsTableBody');
+        
+        if (!tableBody) {
+            console.warn('[PRODUCTION RECORDS] Table body not found');
+            return;
+        }
+        
+        // Show loading state
+        if (loadingEl) loadingEl.classList.remove('hidden');
+        tableBody.innerHTML = '<tr><td colspan="10" class="no-data-text">Loading production records...</td></tr>';
+        
+        // Fetch all production records
+        const productionRecordsRef = collection(db, `users/${uid}/productionRecords`);
+        const querySnapshot = await getDocs(productionRecordsRef);
+        
+        if (querySnapshot.empty) {
+            tableBody.innerHTML = '<tr><td colspan="10" class="no-data-text">No production records available</td></tr>';
+            if (loadingEl) loadingEl.classList.add('hidden');
+            // Set default empty state in Output Value card
+            updateProductionOutputValue(null);
+            return;
+        }
+        
+        // Convert to array and sort by createdAt DESC (newest first)
+        const records = [];
+        querySnapshot.forEach(doc => {
+            const data = doc.data();
+            records.push({
+                id: doc.id,
+                ...data
+            });
+        });
+        
+        // Sort by createdAt DESC
+        records.sort((a, b) => {
+            const aTime = timestampToDate(a.createdAt);
+            const bTime = timestampToDate(b.createdAt);
+            if (!aTime || !bTime) return 0;
+            return bTime - aTime; // Newest first
+        });
+        
+        // Store rows in reportRowsState for export
+        reportRowsState.productionRows = records.map(record => {
+            const createdAt = timestampToDate(record.createdAt);
+            let dateStr = '--';
+            if (createdAt) {
+                dateStr = createdAt.toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'short', 
+                    day: 'numeric' 
+                });
+            }
+            
+            return {
+                date: dateStr,
+                startMonth: record.startMonth || '--',
+                endMonth: record.endMonth || '--',
+                fingerlings: record.fingerlingsCount || 0,
+                harvested: record.harvestedCount || 0,
+                survival: record.survivalPercentage || record.survivalRate || 0,
+                profit: record.profitValue || record.profitRate || 0,
+                loss: record.lossValue || record.lossRate || 0,
+                deaths: record.deathsValue || record.deathsCount || 0
+            };
+        });
+        
+        // Clear table
+        tableBody.innerHTML = '';
+        
+        // Render table rows
+        records.forEach((record, index) => {
+            const row = document.createElement('tr');
+            row.dataset.recordId = record.id;
+            
+            // Format date from createdAt (local date format)
+            const createdAt = timestampToDate(record.createdAt);
+            let dateStr = '--';
+            if (createdAt) {
+                // Format as "MMM DD, YYYY" (e.g., "Jan 22, 2026")
+                dateStr = createdAt.toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'short', 
+                    day: 'numeric' 
+                });
+            }
+            
+            // Get field values (handle both old and new field names)
+            const fingerlings = record.fingerlingsCount || 0;
+            const harvested = record.harvestedCount || 0;
+            const survival = record.survivalPercentage || record.survivalRate || 0;
+            const profit = record.profitValue || record.profitRate || 0;
+            const loss = record.lossValue || record.lossRate || 0;
+            const deaths = record.deathsValue || record.deathsCount || 0;
+            const startMonth = record.startMonth || '--';
+            const endMonth = record.endMonth || '--';
+            
+            // Create season key for checkbox
+            const seasonKey = `${startMonth}_${endMonth}`;
+            
+            row.innerHTML = `
+                <td style="text-align: center;">
+                    <input type="checkbox" class="season-row-checkbox" value="${seasonKey}" checked data-record-id="${record.id}" onchange="handleSeasonRowCheckboxChange()" style="cursor: pointer; width: 18px; height: 18px;">
+                </td>
+                <td>${dateStr}</td>
+                <td>${startMonth}</td>
+                <td>${endMonth}</td>
+                <td>${fingerlings}</td>
+                <td>${harvested}</td>
+                <td>${survival}%</td>
+                <td>${profit}%</td>
+                <td>${loss}%</td>
+                <td>${deaths}</td>
+            `;
+            
+            // Add click handler
+            row.addEventListener('click', () => {
+                // Remove selected class from all rows
+                tableBody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+                // Add selected class to clicked row
+                row.classList.add('selected');
+                // Update Output Value card
+                updateProductionOutputValue(record);
+            });
+            
+            // Auto-select first (newest) record on load
+            if (index === 0) {
+                row.classList.add('selected');
+                updateProductionOutputValue(record);
+            }
+            
+            tableBody.appendChild(row);
+        });
+        
+        if (loadingEl) loadingEl.classList.add('hidden');
+        
+        console.log(`[PRODUCTION RECORDS] Loaded ${records.length} production records`);
+        
+    } catch (error) {
+        console.error('[PRODUCTION RECORDS] Error loading production records:', error);
+        const tableBody = document.getElementById('productionRecordsTableBody');
+        if (tableBody) {
+            tableBody.innerHTML = '<tr><td colspan="10" class="no-data-text">Error loading production records</td></tr>';
+        }
+        const loadingEl = document.getElementById('production-loading');
+        if (loadingEl) loadingEl.classList.add('hidden');
+        updateProductionOutputValue(null);
+    }
+}
+
+// Update Output Value card with selected production record
+function updateProductionOutputValue(record) {
+    if (!record) {
+        // Set default empty state
+        document.getElementById('reportFingerlingsHarvest').textContent = '--';
+        document.getElementById('reportSurvivalPercentage').textContent = '--%';
+        document.getElementById('reportProfitValue').textContent = '--%';
+        document.getElementById('reportLossValue').textContent = '--%';
+        document.getElementById('reportDeathsValue').textContent = '--';
+        return;
+    }
+    
+    // Get field values (handle both old and new field names)
+    const fingerlings = record.fingerlingsCount || 0;
+    const harvested = record.harvestedCount || 0;
+    const survival = record.survivalPercentage || record.survivalRate || 0;
+    const profit = record.profitValue || record.profitRate || 0;
+    const loss = record.lossValue || record.lossRate || 0;
+    const deaths = record.deathsValue || record.deathsCount || 0;
+    
+    // Update Output Value card (matches Production Monitoring format)
+    document.getElementById('reportFingerlingsHarvest').textContent = `${fingerlings} / ${harvested}`;
+    document.getElementById('reportSurvivalPercentage').textContent = `${survival}%`;
+    document.getElementById('reportProfitValue').textContent = `${profit}%`;
+    document.getElementById('reportLossValue').textContent = `${loss}%`;
+    document.getElementById('reportDeathsValue').textContent = deaths;
+}
+
 // Load Mortality Log Report into table
 async function loadMortalityLogReport() {
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
         if (!uid) return;
         
         const mortalityLogsRef = collection(db, `users/${uid}/mortalityLogs`);
@@ -4466,7 +7671,7 @@ async function loadMortalityLogReport() {
 // Load and display sensor analytics based on selected period
 async function loadSensorAnalyticsUI() {
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
         if (!uid) return;
         
         const periodSelector = document.getElementById('analyticsPeriodSelector');
@@ -4520,7 +7725,9 @@ async function loadSensorAnalyticsUI() {
 // Load daily analytics UI
 async function loadDailyAnalyticsUI(uid, date) {
     try {
-        const analyticsRef = doc(db, "users", uid, "sensorAnalytics", "daily", date);
+        // Path: users/{uid}/sensorAnalytics/daily/{YYYY-MM-DD}
+        // daily is a collection, YYYY-MM-DD is a document
+        const analyticsRef = doc(db, `users/${uid}/sensorAnalytics/daily/${date}`);
         const analyticsSnap = await getDoc(analyticsRef);
         
         const cardsContainer = document.getElementById('analyticsCardsContainer');
@@ -4713,7 +7920,9 @@ async function loadMonthlyAnalyticsUI(uid, month) {
     try {
         // Get monthly sensor analytics for the selected month
         const monthString = month; // Already in YYYY-MM format
-        const analyticsRef = doc(db, "users", uid, "sensorAnalytics", "monthly", monthString);
+        // Path: users/{uid}/sensorAnalytics/monthly/{YYYY-MM}
+        // monthly is a collection, YYYY-MM is a document
+        const analyticsRef = doc(db, `users/${uid}/sensorAnalytics/monthly/${monthString}`);
         const analyticsSnap = await getDoc(analyticsRef);
         
         const cardsContainer = document.getElementById('analyticsCardsContainer');
@@ -4979,7 +8188,6 @@ function exportTableToHTML(tableId, filename) {
 function getDailyRowsForExport() {
     return reportRowsState.dailyRows.map(row => ({
         date: row.date,
-        feedUsed: row.feedUsed !== null ? row.feedUsed : null,
         mortality: row.mortality !== null ? row.mortality : null,
         avgTemperature: row.avgTemperature !== null ? row.avgTemperature : null,
         avgPh: row.avgPh !== null ? row.avgPh : null,
@@ -4990,7 +8198,6 @@ function getDailyRowsForExport() {
 function getWeeklyRowsForExport() {
     return reportRowsState.weeklyRows.map(row => ({
         period: row.period,
-        totalFeed: row.totalFeed !== null ? row.totalFeed : null,
         mortality: row.mortality !== null ? row.mortality : null,
         avgPh: row.avgPh !== null ? row.avgPh : null,
         avgTemperature: row.avgTemperature !== null ? row.avgTemperature : null,
@@ -5001,7 +8208,6 @@ function getWeeklyRowsForExport() {
 function getMonthlyRowsForExport() {
     return reportRowsState.monthlyRows.map(row => ({
         month: row.month,
-        totalFeed: row.totalFeed !== null ? row.totalFeed : null,
         totalMortality: row.totalMortality !== null ? row.totalMortality : null,
         avgPh: row.avgPh !== null ? row.avgPh : null,
         avgTemperature: row.avgTemperature !== null ? row.avgTemperature : null,
@@ -5017,6 +8223,88 @@ function getMortalityRowsForExport() {
         cause: row.cause || null,
         notes: row.notes || null
     }));
+}
+
+function getProductionRecordsRowsForExport() {
+    if (!reportRowsState.productionRows) {
+        return [];
+    }
+    
+    // Get selected seasons
+    const selectedSeasons = getSelectedSeasons();
+    
+    // Filter rows by selected seasons
+    let filteredRows = reportRowsState.productionRows;
+    if (selectedSeasons.length > 0) {
+        filteredRows = reportRowsState.productionRows.filter(row => {
+            const seasonKey = `${row.startMonth || ''}_${row.endMonth || ''}`;
+            return selectedSeasons.includes(seasonKey);
+        });
+    }
+    
+    return filteredRows.map(row => ({
+        date: row.date,
+        startMonth: row.startMonth,
+        endMonth: row.endMonth,
+        fingerlings: row.fingerlings !== null ? row.fingerlings : null,
+        harvested: row.harvested !== null ? row.harvested : null,
+        survival: row.survival !== null ? `${row.survival}%` : null,
+        profit: row.profit !== null ? `${row.profit}%` : null,
+        loss: row.loss !== null ? `${row.loss}%` : null,
+        deaths: row.deaths !== null ? row.deaths : null
+    }));
+}
+
+// Handle "Select All" checkbox in table header
+window.handleSelectAllSeasons = function() {
+    const selectAllCheckbox = document.getElementById('selectAllSeasons');
+    const rowCheckboxes = document.querySelectorAll('.season-row-checkbox');
+    
+    if (selectAllCheckbox) {
+        rowCheckboxes.forEach(checkbox => {
+            checkbox.checked = selectAllCheckbox.checked;
+        });
+    }
+}
+
+// Handle individual row checkbox change
+window.handleSeasonRowCheckboxChange = function() {
+    const selectAllCheckbox = document.getElementById('selectAllSeasons');
+    const rowCheckboxes = document.querySelectorAll('.season-row-checkbox');
+    const checkedCount = document.querySelectorAll('.season-row-checkbox:checked').length;
+    
+    // Update "Select All" checkbox state
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = checkedCount === rowCheckboxes.length;
+    }
+}
+
+// Format month label (e.g., "2026-01" -> "January 2026")
+function formatMonthLabel(monthStr) {
+    if (!monthStr || !monthStr.includes('-')) return monthStr;
+    
+    const [year, month] = monthStr.split('-');
+    const monthNum = parseInt(month, 10);
+    if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) return monthStr;
+    
+    const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    
+    return `${monthNames[monthNum - 1]} ${year}`;
+}
+
+// Get selected seasons from row checkboxes
+function getSelectedSeasons() {
+    const checkedBoxes = document.querySelectorAll('.season-row-checkbox:checked');
+    const selected = new Set();
+    
+    checkedBoxes.forEach(checkbox => {
+        selected.add(checkbox.value);
+    });
+    
+    return Array.from(selected);
 }
 
 // ============================================================
@@ -5546,8 +8834,109 @@ window.exportMortalityReport = async function(format) {
     }
 };
 
+window.exportProductionRecordsReport = async function(format) {
+    // Get selected seasons
+    const selectedSeasons = getSelectedSeasons();
+    
+    if (selectedSeasons.length === 0) {
+        showNotification('Please select at least one season to export', 'warning');
+        return;
+    }
+    
+    const rows = getProductionRecordsRowsForExport();
+    
+    if (!rows || rows.length === 0) {
+        showNotification('No data to export for the selected seasons', 'warning');
+        return;
+    }
+    
+    // Build filename with season info
+    let filename = 'Production_Records_Report';
+    const totalRows = reportRowsState.productionRows ? reportRowsState.productionRows.length : 0;
+    
+    if (selectedSeasons.length === totalRows || selectedSeasons.length === 0) {
+        filename = 'Production_Records_Report_All_Seasons';
+    } else if (selectedSeasons.length <= 3) {
+        // Include season names in filename if few seasons selected
+        const seasonLabels = selectedSeasons.map(key => {
+            const [start, end] = key.split('_');
+            return start === end ? formatMonthLabel(start) : `${formatMonthLabel(start)}_${formatMonthLabel(end)}`;
+        }).join('_');
+        if (seasonLabels) {
+            filename = `Production_Records_Report_${seasonLabels.replace(/\s+/g, '_')}`;
+        }
+    } else {
+        filename = `Production_Records_Report_${selectedSeasons.length}_Seasons`;
+    }
+    
+    const columns = ['Date', 'Start Month', 'End Month', 'Fingerlings', 'Harvested', 'Survival %', 'Profit %', 'Loss %', 'Deaths'];
+    
+    if (format === 'excel' || format === 'csv') {
+        // For CSV export, we need to filter the table data
+        exportProductionRecordsToCSV(rows, filename);
+    } else if (format === 'word') {
+        await exportToWord({ title: 'Production Records Report', columns, rows, filename });
+    } else if (format === 'pdf') {
+        exportToPDF({ title: 'Production Records Report', columns, rows, filename });
+    }
+};
+
+// Export production records to CSV (filtered by selected seasons)
+function exportProductionRecordsToCSV(rows, filename) {
+    try {
+        if (!rows || rows.length === 0) {
+            showNotification('No data to export', 'warning');
+            return;
+        }
+        
+        // Create CSV content
+        const headers = ['Date', 'Start Month', 'End Month', 'Fingerlings', 'Harvested', 'Survival %', 'Profit %', 'Loss %', 'Deaths'];
+        const csvRows = [headers.join(',')];
+        
+        rows.forEach(row => {
+            const csvRow = [
+                `"${row.date || ''}"`,
+                `"${row.startMonth || ''}"`,
+                `"${row.endMonth || ''}"`,
+                row.fingerlings !== null ? row.fingerlings : '',
+                row.harvested !== null ? row.harvested : '',
+                row.survival || '',
+                row.profit || '',
+                row.loss || '',
+                row.deaths !== null ? row.deaths : ''
+            ];
+            csvRows.push(csvRow.join(','));
+        });
+        
+        const csvContent = csvRows.join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', `${filename}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        showNotification('Production records exported successfully', 'success');
+    } catch (error) {
+        console.error('Error exporting production records to CSV:', error);
+        showNotification('Error exporting production records', 'error');
+    }
+}
+
 // Admin Dashboard specific functions
 export async function initializeAdminDashboard() {
+    // Ensure device record exists (non-blocking, works with or without auth)
+    // This must run on every dashboard initialization, not just on login
+    await ensureDeviceRecordExists();
+    
+    // Resolve runtime context (works with or without authentication)
+    window.RUNTIME_CONTEXT = await resolveRuntimeContext();
+    console.log('[INIT] Runtime context resolved:', window.RUNTIME_CONTEXT);
+    
     // Update user name in navigation
     await updateUserDisplayName();
     
@@ -5740,6 +9129,95 @@ window.toggleFeeder = async function(deviceId, currentState) {
     }
 };
 
+// Update motor toggle button appearance based on state
+// Supports multiple buttons (dashboard and feeding page)
+function updateMotorToggleButton(isOnline) {
+    // Update dashboard motor button
+    const toggleBtn = document.getElementById('motorToggleBtn');
+    const toggleText = document.getElementById('motorToggleText');
+    const toggleIcon = document.getElementById('motorToggleIcon');
+    
+    if (toggleBtn && toggleText && toggleIcon) {
+        updateButtonState(toggleBtn, toggleText, toggleIcon, isOnline);
+    }
+    
+    // Update feeding page motor button
+    const feedingToggleBtn = document.getElementById('feedingMotorToggleBtn');
+    const feedingToggleText = document.getElementById('feedingMotorToggleText');
+    const feedingToggleIcon = document.getElementById('feedingMotorToggleIcon');
+    
+    if (feedingToggleBtn && feedingToggleText && feedingToggleIcon) {
+        updateButtonState(feedingToggleBtn, feedingToggleText, feedingToggleIcon, isOnline);
+    }
+}
+
+// Helper function to update a single button's state
+function updateButtonState(btn, textEl, iconEl, isOnline) {
+    if (isOnline === null || isOnline === undefined) {
+        // Unknown state - allow clicks to attempt state change
+        btn.style.background = '#6b7280';
+        textEl.textContent = 'Loading...';
+        iconEl.className = 'fas fa-power-off';
+        btn.disabled = false; // Enable button so clicks can work
+        return;
+    }
+    
+    if (isOnline) {
+        // Motor is ON - show OFF option
+        btn.style.background = '#10b981';
+        btn.onmouseover = function() { this.style.background = '#059669'; };
+        btn.onmouseout = function() { this.style.background = '#10b981'; };
+        textEl.textContent = 'Turn OFF';
+        iconEl.className = 'fas fa-stop';
+        btn.disabled = false;
+    } else {
+        // Motor is OFF - show ON option
+        btn.style.background = '#ef4444';
+        btn.onmouseover = function() { this.style.background = '#dc2626'; };
+        btn.onmouseout = function() { this.style.background = '#ef4444'; };
+        textEl.textContent = 'Turn ON';
+        iconEl.className = 'fas fa-play';
+        btn.disabled = false;
+    }
+}
+
+// Motor toggle function - toggles between online/offline based on current state
+window.toggleMotor = async function() {
+    try {
+        // Get current state from RTDB (no auth check - works without login)
+        const feederStateRef = ref(rtdb, `devices/${DEVICE_ID}/status/feeder/state`);
+        const snapshot = await get(feederStateRef);
+        
+        let currentState = 'offline'; // Default to offline
+        if (snapshot.exists()) {
+            const stateValue = snapshot.val();
+            if (stateValue) {
+                currentState = String(stateValue).toLowerCase();
+            }
+        }
+        
+        // Toggle state: online -> offline, offline -> online
+        const newState = currentState === 'online' ? 'offline' : 'online';
+        
+        // Write state string directly to RTDB (no auth required)
+        await set(feederStateRef, newState);
+        
+        // Verify the write
+        const verifySnap = await get(feederStateRef);
+        console.log('[RTDB] Motor toggled to:', verifySnap.val(), 'at devices/' + DEVICE_ID + '/status/feeder/state');
+        
+        showNotification(`Motor ${newState.toUpperCase()}`, 'success');
+        console.log(`[RTDB] Toggled motor state to ${newState} at devices/${DEVICE_ID}/status/feeder/state`);
+        
+        // Update button appearance immediately
+        updateMotorToggleButton(newState === 'online');
+        
+    } catch (error) {
+        console.error('Error toggling motor:', error);
+        showNotification('Error updating motor state', 'error');
+    }
+};
+
 // DEVICE CONTROL API (SuperAdmin Only - Firestore for device management)
 // ============================================================
 
@@ -5790,7 +9268,7 @@ export async function disableDevice(uid, deviceId, enabled = false) {
 // Log activity
 export async function logActivity(type, message) {
     try {
-        const adminId = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+        const adminId = window.RUNTIME_CONTEXT?.runtimeUid || null;
         await addDoc(collection(db, "activities"), {
             type,
             message,
@@ -5829,7 +9307,7 @@ export async function logSystemEvent(message, type = "info") {
             message,
             type,
             timestamp: serverTimestamp(),
-            adminId: auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid')
+            adminId: window.RUNTIME_CONTEXT?.runtimeUid || null
         });
     } catch (error) {
         console.error('Error logging system event:', error);
@@ -5843,7 +9321,7 @@ export async function logError(message, details = "") {
             message,
             details,
             timestamp: serverTimestamp(),
-            adminId: auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid')
+            adminId: window.RUNTIME_CONTEXT?.runtimeUid || null
         });
     } catch (error) {
         console.error('Error logging error:', error);
@@ -6067,6 +9545,14 @@ export async function loadFirmwareVersions() {
 
 // Super Admin Dashboard specific functions
 export async function initializeSuperAdminDashboard() {
+    // Ensure device record exists (non-blocking, works with or without auth)
+    // This must run on every dashboard initialization, not just on login
+    await ensureDeviceRecordExists();
+    
+    // Resolve runtime context (works with or without authentication)
+    window.RUNTIME_CONTEXT = await resolveRuntimeContext();
+    console.log('[INIT] Runtime context resolved:', window.RUNTIME_CONTEXT);
+    
     // Update user name in navigation
     await updateUserDisplayName();
     
@@ -6721,7 +10207,7 @@ export async function initializeSuperAdminDashboard() {
                 notes: notes || '',
                 type: 'apk',
                 uploadedAt: serverTimestamp(),
-                adminId: auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid')
+                adminId: window.RUNTIME_CONTEXT?.runtimeUid || null
             });
             
             await logSystemEvent(`Mobile app update published: Version ${version}`, 'info');
@@ -6899,7 +10385,7 @@ export async function initializeSuperAdminDashboard() {
                 outdatedDevices,
                 notes: notes || '',
                 timestamp: serverTimestamp(),
-                adminId: auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid')
+                adminId: window.RUNTIME_CONTEXT?.runtimeUid || null
             });
             
             await logSystemEvent(`Firmware update recorded: ${version} (${updateType})`, 'info');
@@ -6920,7 +10406,7 @@ export async function initializeSuperAdminDashboard() {
     // Diagnostic function to check user permissions
     async function diagnosePermissions() {
         try {
-            const userUid = sessionStorage.getItem('userUid');
+            const userUid = window.RUNTIME_CONTEXT?.runtimeUid || null;
             console.log('=== PERMISSION DIAGNOSTICS ===');
             console.log('User UID:', userUid);
             console.log('Current User:', window.currentUser);
@@ -7074,25 +10560,22 @@ function showChartEmptyState(canvasId, message) {
 // Render daily charts
 function renderDailyCharts(reports) {
     // Filter out seed documents
-    const realReports = reports.filter(r => !r.isSeed || (r.avgTemperature !== 0 || r.avgPh !== 0 || (r.totalFeedKg && r.totalFeedKg !== 0)));
+    const realReports = reports.filter(r => !r.isSeed || (r.avgTemperature !== 0 || r.avgPh !== 0));
     
     if (realReports.length === 0) {
         destroyChart(chartInstances.daily.temperature);
         destroyChart(chartInstances.daily.ph);
-        destroyChart(chartInstances.daily.feed);
         chartInstances.daily.temperature = null;
         chartInstances.daily.ph = null;
-        chartInstances.daily.feed = null;
         
         showChartEmptyState('dailyTemperatureChart', 'No data yet');
         showChartEmptyState('dailyPhChart', 'No data yet');
-        showChartEmptyState('dailyFeedChart', 'No data yet');
         return;
     }
     
     // Remove empty state messages
     document.querySelectorAll('.chart-empty-state').forEach(el => {
-        if (el.parentElement.querySelector('#dailyTemperatureChart, #dailyPhChart, #dailyFeedChart')) {
+        if (el.parentElement.querySelector('#dailyTemperatureChart, #dailyPhChart')) {
             el.remove();
         }
     });
@@ -7104,17 +10587,14 @@ function renderDailyCharts(reports) {
     }).reverse();
     const temps = realReports.map(r => r.avgTemperature || 0).reverse();
     const phs = realReports.map(r => r.avgPh || 0).reverse();
-    const feeds = realReports.map(r => r.totalFeedKg || r.feedUsedKg || 0).reverse();
     
     // Destroy old charts
     destroyChart(chartInstances.daily.temperature);
     destroyChart(chartInstances.daily.ph);
-    destroyChart(chartInstances.daily.feed);
     
     // Create new charts
     const tempCtx = document.getElementById('dailyTemperatureChart');
     const phCtx = document.getElementById('dailyPhChart');
-    const feedCtx = document.getElementById('dailyFeedChart');
     
     if (tempCtx && typeof Chart !== 'undefined') {
         chartInstances.daily.temperature = new Chart(tempCtx, {
@@ -7147,43 +10627,25 @@ function renderDailyCharts(reports) {
             options: { responsive: true, maintainAspectRatio: true }
         });
     }
-    
-    if (feedCtx && typeof Chart !== 'undefined') {
-        chartInstances.daily.feed = new Chart(feedCtx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Feed Used (kg)',
-                    data: feeds,
-                    backgroundColor: 'rgba(54, 162, 235, 0.5)'
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: true }
-        });
-    }
 }
 
 // Render weekly charts
 function renderWeeklyCharts(reports) {
-    const realReports = reports.filter(r => !r.isSeed || (r.avgTemperature !== 0 || r.avgPh !== 0 || (r.totalFeedKg && r.totalFeedKg !== 0)));
+    const realReports = reports.filter(r => !r.isSeed || (r.avgTemperature !== 0 || r.avgPh !== 0));
     
     if (realReports.length === 0) {
         destroyChart(chartInstances.weekly.temperature);
         destroyChart(chartInstances.weekly.ph);
-        destroyChart(chartInstances.weekly.feed);
         chartInstances.weekly.temperature = null;
         chartInstances.weekly.ph = null;
-        chartInstances.weekly.feed = null;
         
         showChartEmptyState('weeklyTemperatureChart', 'No data yet');
         showChartEmptyState('weeklyPhChart', 'No data yet');
-        showChartEmptyState('weeklyFeedChart', 'No data yet');
         return;
     }
     
     document.querySelectorAll('.chart-empty-state').forEach(el => {
-        if (el.parentElement.querySelector('#weeklyTemperatureChart, #weeklyPhChart, #weeklyFeedChart')) {
+        if (el.parentElement.querySelector('#weeklyTemperatureChart, #weeklyPhChart')) {
             el.remove();
         }
     });
@@ -7191,15 +10653,12 @@ function renderWeeklyCharts(reports) {
     const labels = realReports.map(r => r.week || 'Week').reverse();
     const temps = realReports.map(r => r.avgTemperature || 0).reverse();
     const phs = realReports.map(r => r.avgPh || 0).reverse();
-    const feeds = realReports.map(r => r.totalFeedKg || 0).reverse();
     
     destroyChart(chartInstances.weekly.temperature);
     destroyChart(chartInstances.weekly.ph);
-    destroyChart(chartInstances.weekly.feed);
     
     const tempCtx = document.getElementById('weeklyTemperatureChart');
     const phCtx = document.getElementById('weeklyPhChart');
-    const feedCtx = document.getElementById('weeklyFeedChart');
     
     if (tempCtx && typeof Chart !== 'undefined') {
         chartInstances.weekly.temperature = new Chart(tempCtx, {
@@ -7232,43 +10691,25 @@ function renderWeeklyCharts(reports) {
             options: { responsive: true, maintainAspectRatio: true }
         });
     }
-    
-    if (feedCtx && typeof Chart !== 'undefined') {
-        chartInstances.weekly.feed = new Chart(feedCtx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Total Feed (kg)',
-                    data: feeds,
-                    backgroundColor: 'rgba(54, 162, 235, 0.5)'
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: true }
-        });
-    }
 }
 
 // Render monthly charts
 function renderMonthlyCharts(reports) {
-    const realReports = reports.filter(r => !r.isSeed || (r.avgTemperature !== 0 || r.avgPh !== 0 || (r.totalFeedKg && r.totalFeedKg !== 0)));
+    const realReports = reports.filter(r => !r.isSeed || (r.avgTemperature !== 0 || r.avgPh !== 0));
     
     if (realReports.length === 0) {
         destroyChart(chartInstances.monthly.temperature);
         destroyChart(chartInstances.monthly.ph);
-        destroyChart(chartInstances.monthly.feed);
         chartInstances.monthly.temperature = null;
         chartInstances.monthly.ph = null;
-        chartInstances.monthly.feed = null;
         
         showChartEmptyState('monthlyTemperatureChart', 'No data yet');
         showChartEmptyState('monthlyPhChart', 'No data yet');
-        showChartEmptyState('monthlyFeedChart', 'No data yet');
         return;
     }
     
     document.querySelectorAll('.chart-empty-state').forEach(el => {
-        if (el.parentElement.querySelector('#monthlyTemperatureChart, #monthlyPhChart, #monthlyFeedChart')) {
+        if (el.parentElement.querySelector('#monthlyTemperatureChart, #monthlyPhChart')) {
             el.remove();
         }
     });
@@ -7280,15 +10721,12 @@ function renderMonthlyCharts(reports) {
     }).reverse();
     const temps = realReports.map(r => r.avgTemperature || 0).reverse();
     const phs = realReports.map(r => r.avgPh || 0).reverse();
-    const feeds = realReports.map(r => r.totalFeedKg || 0).reverse();
     
     destroyChart(chartInstances.monthly.temperature);
     destroyChart(chartInstances.monthly.ph);
-    destroyChart(chartInstances.monthly.feed);
     
     const tempCtx = document.getElementById('monthlyTemperatureChart');
     const phCtx = document.getElementById('monthlyPhChart');
-    const feedCtx = document.getElementById('monthlyFeedChart');
     
     if (tempCtx && typeof Chart !== 'undefined') {
         chartInstances.monthly.temperature = new Chart(tempCtx, {
@@ -7321,43 +10759,25 @@ function renderMonthlyCharts(reports) {
             options: { responsive: true, maintainAspectRatio: true }
         });
     }
-    
-    if (feedCtx && typeof Chart !== 'undefined') {
-        chartInstances.monthly.feed = new Chart(feedCtx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Total Feed (kg)',
-                    data: feeds,
-                    backgroundColor: 'rgba(54, 162, 235, 0.5)'
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: true }
-        });
-    }
 }
 
 // Render hourly charts
 function renderHourlyCharts(reports) {
-    const realReports = reports.filter(r => !r.isSeed || (r.temperatureAvg !== 0 || r.phAvg !== 0 || (r.feedUsedKg && r.feedUsedKg !== 0)));
+    const realReports = reports.filter(r => !r.isSeed || (r.temperatureAvg !== 0 || r.phAvg !== 0));
     
     if (realReports.length === 0) {
         destroyChart(chartInstances.hourly.temperature);
         destroyChart(chartInstances.hourly.ph);
-        destroyChart(chartInstances.hourly.feed);
         chartInstances.hourly.temperature = null;
         chartInstances.hourly.ph = null;
-        chartInstances.hourly.feed = null;
         
         showChartEmptyState('hourlyTemperatureChart', 'No data yet');
         showChartEmptyState('hourlyPhChart', 'No data yet');
-        showChartEmptyState('hourlyFeedChart', 'No data yet');
         return;
     }
     
     document.querySelectorAll('.chart-empty-state').forEach(el => {
-        if (el.parentElement.querySelector('#hourlyTemperatureChart, #hourlyPhChart, #hourlyFeedChart')) {
+        if (el.parentElement.querySelector('#hourlyTemperatureChart, #hourlyPhChart')) {
             el.remove();
         }
     });
@@ -7372,15 +10792,12 @@ function renderHourlyCharts(reports) {
     const labels = sorted.map(r => r.hour || '00');
     const temps = sorted.map(r => r.temperatureAvg || 0);
     const phs = sorted.map(r => r.phAvg || 0);
-    const feeds = sorted.map(r => r.feedUsedKg || 0);
     
     destroyChart(chartInstances.hourly.temperature);
     destroyChart(chartInstances.hourly.ph);
-    destroyChart(chartInstances.hourly.feed);
     
     const tempCtx = document.getElementById('hourlyTemperatureChart');
     const phCtx = document.getElementById('hourlyPhChart');
-    const feedCtx = document.getElementById('hourlyFeedChart');
     
     if (tempCtx && typeof Chart !== 'undefined') {
         chartInstances.hourly.temperature = new Chart(tempCtx, {
@@ -7413,21 +10830,6 @@ function renderHourlyCharts(reports) {
             options: { responsive: true, maintainAspectRatio: true }
         });
     }
-    
-    if (feedCtx && typeof Chart !== 'undefined') {
-        chartInstances.hourly.feed = new Chart(feedCtx, {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Feed Used (kg)',
-                    data: feeds,
-                    backgroundColor: 'rgba(54, 162, 235, 0.5)'
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: true }
-        });
-    }
 }
 
 // ============================================================
@@ -7443,7 +10845,7 @@ async function generateHarvestReport(uid, harvestId) {}
 // Helper: Load daily reports (read-only, for chart)
 async function loadDailyReports() {
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
         if (!uid) return [];
         
         const dailyReportsRef = collection(db, `users/${uid}/dailyReports`);
@@ -7465,7 +10867,7 @@ async function loadDailyReports() {
 // Helper: Load weekly reports (read-only, for chart)
 async function loadWeeklyReports() {
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
         if (!uid) return [];
         
         const weeklyReportsRef = collection(db, `users/${uid}/weeklyReports`);
@@ -7487,7 +10889,7 @@ async function loadWeeklyReports() {
 // Helper: Load monthly reports (read-only, for chart)
 async function loadMonthlyReports() {
     try {
-        const uid = auth.currentUser ? auth.currentUser.uid : sessionStorage.getItem('userUid');
+        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
         if (!uid) return [];
         
         const monthlyReportsRef = collection(db, `users/${uid}/monthlyReports`);
@@ -7542,72 +10944,17 @@ function updateChartPeriodSelector() {
 }
 
 // Main chart render function
-async function renderWaterQualityChart() {
-    const metricSelect = document.getElementById('chartMetric');
-    const rangeSelect = document.getElementById('chartRange');
-    const monthSelector = document.getElementById('chartPeriodSelector');
-    const yearSelector = document.getElementById('chartYearSelector');
+// Render live sensor readings chart
+function renderLiveSensorChart() {
+    const metricSelect = document.getElementById('liveChartMetric');
     const canvas = document.getElementById('waterQualityChart');
 
-    if (!metricSelect || !rangeSelect || !canvas) return;
+    if (!metricSelect || !canvas) return;
 
     const metric = metricSelect.value;
-    const range = rangeSelect.value;
-    const period = (range === 'daily' || range === 'weekly') 
-        ? (monthSelector ? monthSelector.value : null)
-        : (yearSelector ? yearSelector.value : null);
 
-    let reports = [];
-
-    if (range === 'daily') reports = await loadDailyReports();
-    if (range === 'weekly') reports = await loadWeeklyReports();
-    if (range === 'monthly') reports = await loadMonthlyReports();
-
-    reports = reports.filter(r => !r.isSeed);
-
-    // Apply period filtering
-    if (period) {
-        if (range === 'daily' || range === 'weekly') {
-            // Filter by month (YYYY-MM format)
-            reports = reports.filter(r => {
-                if (range === 'daily') {
-                    return r.date && r.date.startsWith(period);
-                } else {
-                    // For weekly, check if week overlaps with selected month
-                    const weekStr = r.week || '';
-                    const match = weekStr.match(/(\d{4})-W(\d{2})/);
-                    if (match) {
-                        const year = parseInt(match[1]);
-                        const week = parseInt(match[2]);
-                        const monday = isoWeekToMonday(year, week);
-                        const sunday = new Date(monday);
-                        sunday.setDate(monday.getDate() + 6);
-                        
-                        const [selectedYear, selectedMonth] = period.split('-').map(Number);
-                        const monthStart = new Date(selectedYear, selectedMonth - 1, 1);
-                        const monthEnd = getEndOfMonth(monthStart);
-                        
-                        const weekOverlaps = (monday >= monthStart && monday <= monthEnd) ||
-                                           (sunday >= monthStart && sunday <= monthEnd) ||
-                                           (monday <= monthStart && sunday >= monthEnd);
-                        return weekOverlaps;
-                    }
-                    return false;
-                }
-            });
-        } else if (range === 'monthly') {
-            // Filter by year
-            reports = reports.filter(r => {
-                if (r.month) {
-                    const reportYear = r.month.split('-')[0];
-                    return reportYear === period;
-                }
-                return false;
-            });
-        }
-    }
-
-    if (!reports.length) {
+    // Check if we have data
+    if (liveSensorData.timestamps.length === 0) {
         destroyWaterQualityChart();
         document.getElementById('chartEmptyState')?.classList.remove('hidden');
         return;
@@ -7615,47 +10962,116 @@ async function renderWaterQualityChart() {
 
     document.getElementById('chartEmptyState')?.classList.add('hidden');
 
-    // Format labels based on range
-    const labels = reports.map(r => {
-        if (range === 'daily') {
-            if (!r.date) return '';
-            const date = new Date(r.date + 'T00:00:00');
-            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        } else if (range === 'weekly') {
-            return r.week || '';
-        } else {
-            if (!r.month) return '';
-            const [year, month] = r.month.split('-');
-            const monthDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-            return monthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-        }
-    }).reverse(); // Show oldest first
-
-    const values = reports.map(r =>
-        metric === 'temperature' ? r.avgTemperature : r.avgPh
-    ).reverse(); // Match labels order
+    // Format time labels (show time in HH:MM:SS format)
+    const labels = liveSensorData.timestamps.map(ts => {
+        const date = new Date(ts);
+        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    });
 
     destroyWaterQualityChart();
+
+    const datasets = [];
+
+    if (metric === 'temperature' || metric === 'both') {
+        datasets.push({
+            label: 'Temperature (°C)',
+            data: liveSensorData.temperature,
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            tension: 0.4,
+            yAxisID: 'y'
+        });
+    }
+
+    if (metric === 'ph' || metric === 'both') {
+        datasets.push({
+            label: 'pH Level',
+            data: liveSensorData.ph,
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            tension: 0.4,
+            yAxisID: metric === 'both' ? 'y1' : 'y'
+        });
+    }
 
     waterQualityChart = new Chart(canvas.getContext('2d'), {
         type: 'line',
         data: {
             labels,
-            datasets: [{
-                label: metric === 'temperature'
-                    ? 'Average Temperature (°C)'
-                    : 'Average pH',
-                data: values,
-                borderColor: '#4a90e2',
-                backgroundColor: 'rgba(74,144,226,0.15)',
-                tension: 0.3
-            }]
+            datasets
         },
         options: {
             responsive: true,
-            maintainAspectRatio: false
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    enabled: true
+                }
+            },
+            scales: {
+                x: {
+                    display: true,
+                    title: {
+                        display: true,
+                        text: 'Time'
+                    }
+                },
+                y: {
+                    display: true,
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: metric === 'both' ? 'Temperature (°C)' : (metric === 'temperature' ? 'Temperature (°C)' : 'pH Level')
+                    }
+                },
+                ...(metric === 'both' ? {
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: 'pH Level'
+                        },
+                        grid: {
+                            drawOnChartArea: false
+                        }
+                    }
+                } : {})
+            },
+            animation: {
+                duration: 300
+            }
         }
     });
+}
+
+// Add new sensor reading to live data
+function addLiveSensorReading(temperature, ph) {
+    const now = Date.now();
+    
+    // Add to arrays
+    liveSensorData.temperature.push(temperature !== null ? temperature : null);
+    liveSensorData.ph.push(ph !== null ? ph : null);
+    liveSensorData.timestamps.push(now);
+    
+    // Keep only last N data points
+    if (liveSensorData.timestamps.length > liveSensorData.maxDataPoints) {
+        liveSensorData.temperature.shift();
+        liveSensorData.ph.shift();
+        liveSensorData.timestamps.shift();
+    }
+    
+    // Update chart
+    renderLiveSensorChart();
 }
 
 // Destroy water quality chart (separate from other chart destroy function)
@@ -7668,33 +11084,153 @@ function destroyWaterQualityChart() {
 
 // Initialize chart controller on dashboard load
 function initializeWaterQualityChart() {
-    const metricSelect = document.getElementById('chartMetric');
-    const rangeSelect = document.getElementById('chartRange');
-    const periodSelect = document.getElementById('chartPeriodSelector');
+    const metricSelect = document.getElementById('liveChartMetric');
     
-    if (!metricSelect || !rangeSelect) return;
+    if (!metricSelect) return;
     
-    // Initialize period selector based on default range
-    updateChartPeriodSelector();
+    // Event listener for metric selection
+    metricSelect.addEventListener('change', renderLiveSensorChart);
     
-    // Event listeners
-    metricSelect.addEventListener('change', renderWaterQualityChart);
-    
-    rangeSelect.addEventListener('change', () => {
-        updateChartPeriodSelector();
-        renderWaterQualityChart();
-    });
-    
-    const monthSelector = document.getElementById('chartPeriodSelector');
-    const yearSelector = document.getElementById('chartYearSelector');
-    
-    if (monthSelector) {
-        monthSelector.addEventListener('change', renderWaterQualityChart);
-    }
-    if (yearSelector) {
-        yearSelector.addEventListener('change', renderWaterQualityChart);
-    }
-    
-    renderWaterQualityChart();
+    // Initial render
+    renderLiveSensorChart();
 }
 
+// ============================================================
+// WRAP CRITICAL FUNCTIONS WITH SAFETY GUARDS
+// ============================================================
+// Wrap critical functions after they're defined to add error handling
+// This preserves original behavior while adding diagnostics
+
+(function wrapCriticalFunctions() {
+    // Wrap resolveRuntimeContext
+    if (typeof resolveRuntimeContext === 'function') {
+        const original = resolveRuntimeContext;
+        window.__original_resolveRuntimeContext = original;
+        window.resolveRuntimeContext = wrapFunction(original, 'resolveRuntimeContext', 'runtime context resolution');
+    }
+    
+    // Wrap setupSensorRealtimeUpdates
+    if (typeof setupSensorRealtimeUpdates === 'function') {
+        const original = setupSensorRealtimeUpdates;
+        window.__original_setupSensorRealtimeUpdates = original;
+        window.setupSensorRealtimeUpdates = wrapFunction(original, 'setupSensorRealtimeUpdates', 'RTDB listener setup');
+    }
+    
+    // Wrap runRollupsForCurrentContext
+    if (typeof runRollupsForCurrentContext === 'function') {
+        const original = runRollupsForCurrentContext;
+        window.__original_runRollupsForCurrentContext = original;
+        window.runRollupsForCurrentContext = wrapFunction(original, 'runRollupsForCurrentContext', 'rollup execution');
+    }
+    
+    // Wrap startFeedingSchedule
+    if (typeof startFeedingSchedule === 'function') {
+        const original = startFeedingSchedule;
+        window.__original_startFeedingSchedule = original;
+        window.startFeedingSchedule = wrapFunction(original, 'startFeedingSchedule', 'feeding schedule start');
+    }
+    
+    // Wrap stopFeedingSchedule
+    if (typeof stopFeedingSchedule === 'function') {
+        const original = stopFeedingSchedule;
+        window.__original_stopFeedingSchedule = original;
+        window.stopFeedingSchedule = wrapFunction(original, 'stopFeedingSchedule', 'feeding schedule stop');
+    }
+    
+    // Wrap toggleMotor (window function)
+    if (typeof window.toggleMotor === 'function') {
+        const original = window.toggleMotor;
+        window.__original_toggleMotor = original;
+        window.toggleMotor = wrapFunction(original, 'toggleMotor', 'motor control');
+        console.log('[CODE CHECKER] toggleMotor wrapped successfully');
+    } else {
+        console.error('[CODE CHECKER] toggleMotor not found - cannot wrap');
+    }
+    
+    // Verify toggleMotor is accessible
+    console.log('[CODE CHECKER] typeof window.toggleMotor:', typeof window.toggleMotor);
+    
+    console.log('[CODE CHECKER] Critical functions wrapped with safety guards');
+})();
+
+// Boot completion log
+console.log('[BOOT] dashboard.js fully loaded');
+
+// ============================================================
+// BACKGROUND RUNTIME BOOTSTRAP (Index Page Support)
+// ============================================================
+// This function runs core system logic (RTDB listeners, feeding schedules, rollups)
+// on index.html without requiring login or dashboard UI.
+// Prevents duplication via window.__BG_RUNTIME_STARTED__ guard.
+// What runs: RTDB sensor updates, hourly Firestore writes, feeding schedules, rollups.
+// How duplication is prevented: Global flag check before execution.
+
+// ============================================================
+// RUNTIME CORE BOOT (DOM-FREE, AUTH-INDEPENDENT)
+// ============================================================
+// Single entry point for device runtime
+// Works on any page, with or without login
+export async function bootRuntimeCore({sourcePage = 'unknown'} = {}) {
+    // Guard against double execution
+    if (window.__RUNTIME_CORE_STARTED__) {
+        console.log('[CORE] runtime boot skipped (already started)');
+        return;
+    }
+    
+    window.__RUNTIME_CORE_STARTED__ = true;
+    console.log('[CORE] runtime boot start (source:', sourcePage + ')');
+    
+    try {
+        // Step 1: Ensure device record exists (non-blocking, works without auth)
+        await ensureDeviceRecordExists();
+        
+        // Step 2: Resolve runtime context (works with or without authentication)
+        // Never throw - runtime must continue even if context resolution fails
+        try {
+            window.RUNTIME_CONTEXT = await resolveRuntimeContext();
+            console.log('[CORE] Runtime context resolved:', window.RUNTIME_CONTEXT);
+        } catch (contextError) {
+            console.warn('[CORE] Runtime context resolution failed (non-critical):', contextError);
+            window.RUNTIME_CONTEXT = { deviceId: DEVICE_ID, runtimeUid: null, source: 'device' };
+        }
+        
+        // Step 3: Start RTDB live listeners (works without auth)
+        setupSensorRealtimeUpdatesCore();
+        
+        // Step 4: Start feeding schedule executor (motor RTDB writes are unconditional)
+        setupFeedingScheduleExecutionCore();
+        
+        // Step 5: Start rollups safely (guard against duplicate intervals)
+        if (typeof runRollupsForCurrentContext === 'function') {
+            // Run immediately
+            runRollupsForCurrentContext().catch(err => {
+                console.error('[CORE] Initial rollup error:', err);
+            });
+            
+            // Then run every 10 minutes (unified guard)
+            if (!window.__ROLLUP_TIMER__) {
+                window.__ROLLUP_TIMER__ = setInterval(() => {
+                    console.log('[CORE] rollup tick');
+                    runRollupsForCurrentContext().catch(err => {
+                        console.error('[CORE] Rollup error:', err);
+                    });
+                }, 10 * 60 * 1000); // 10 minutes
+                console.log('[CORE] Rollup interval started');
+            } else {
+                console.log('[CORE] Rollup interval already exists, skipping');
+            }
+        }
+        
+        console.log('[CORE] runtime boot ok');
+        
+    } catch (error) {
+        console.error('[CORE] runtime boot error:', error);
+        // Reset flag on error so retry is possible
+        window.__RUNTIME_CORE_STARTED__ = false;
+    }
+}
+
+// Legacy wrapper (backward compatibility)
+export async function bootUserBackgroundRuntime() {
+    return bootRuntimeCore({sourcePage: 'index'});
+}

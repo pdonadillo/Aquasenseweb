@@ -7,6 +7,12 @@
     <title>AquaSense - Smart Aquaculture Management Platform</title>
     <link rel="stylesheet" href="main.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Hide all sign up elements - can be shown via console command "show" */
+        .hide-signup {
+            display: none !important;
+        }
+    </style>
 </head>
 <body>
     <!-- Navigation -->
@@ -27,7 +33,7 @@
             </div>
             <div class="nav-auth">
                 <button class="btn-login" onclick="openModal('loginModal')">Login</button>
-                <button class="btn-signup" onclick="openModal('signupModal')">Sign Up</button>
+                <button class="btn-signup hide-signup" onclick="openModal('signupModal')">Sign Up</button>
             </div>
         </div>
     </nav>
@@ -44,7 +50,7 @@
                     to optimize your aquaculture operations and maximize productivity.
                 </p>
                 <div class="hero-buttons">
-                    <button class="btn-primary" onclick="openModal('signupModal')">
+                    <button class="btn-primary hide-signup" onclick="openModal('signupModal')">
                         <i class="fas fa-rocket"></i>
                         Get Started
                     </button>
@@ -146,7 +152,7 @@
             <div class="cta-content">
                 <h2>Join us and make your aquaculture operations efficient and easier</h2>
                 <div class="cta-buttons">
-                    <button class="btn-primary" onclick="openModal('signupModal')">
+                    <button class="btn-primary hide-signup" onclick="openModal('signupModal')">
                         <i class="fas fa-user-plus"></i>
                         Create Account
                     </button>
@@ -211,7 +217,7 @@
                 <h2>Welcome Back</h2>
                 <p>Sign in to your AquaSense account</p>
             </div>
-            <form class="auth-form">
+            <form class="auth-form" id="loginForm">
                 <div class="form-group">
                     <label for="loginEmail">Email Address</label>
                     <input type="email" id="loginEmail" required>
@@ -229,22 +235,22 @@
                     <a href="#" class="forgot-password">Forgot password?</a>
                 </div>
                 <button type="submit" class="btn-primary full-width">Sign In</button>
-                <div class="auth-divider">
+                <div class="auth-divider hide-signup">
                     <span>or</span>
                 </div>
-                <button type="button" class="btn-google">
+                <button type="button" class="btn-google hide-signup">
                     <i class="fab fa-google"></i>
                     Continue with Google
                 </button>
             </form>
             <div class="modal-footer">
-                <p>Don't have an account? <a href="#" onclick="switchModal('loginModal', 'signupModal')">Sign up</a></p>
+                <p class="hide-signup">Don't have an account? <a href="#" onclick="switchModal('loginModal', 'signupModal')">Sign up</a></p>
             </div>
         </div>
     </div>
 
     <!-- Signup Modal -->
-    <div id="signupModal" class="modal">
+    <div id="signupModal" class="modal hide-signup">
         <div class="modal-content">
             <span class="close" onclick="closeModal('signupModal')">&times;</span>
             <div class="modal-header">
@@ -282,10 +288,10 @@
                     </label>
                 </div>
                 <button type="submit" class="btn-primary full-width">Create Account</button>
-                <div class="auth-divider">
+                <div class="auth-divider hide-signup">
                     <span>or</span>
                 </div>
-                <button type="button" class="btn-google">
+                <button type="button" class="btn-google hide-signup">
                     <i class="fab fa-google"></i>
                     Continue with Google
                 </button>
@@ -319,8 +325,189 @@
             window.closeModal(fromId);
             window.openModal(toId);
         };
+        
+        // Function to show all sign up elements
+        function showSignupElements() {
+            const elements = document.querySelectorAll('.hide-signup');
+            elements.forEach(el => {
+                el.classList.remove('hide-signup');
+            });
+            console.log('%c✅ Sign up elements are now visible!', 'color: green; font-weight: bold; font-size: 14px;');
+        }
+        
+        // Expose as window function for console access - user can type "show" or "show()"
+        window.show = showSignupElements;
+        
+        // Override console methods to detect "show" command
+        const originalLog = console.log;
+        console.log = function(...args) {
+            const message = args.join(' ').toLowerCase();
+            if (message === 'show' || message.trim() === 'show') {
+                showSignupElements();
+                return;
+            }
+            originalLog.apply(console, args);
+        };
+        
+        // Also detect when user evaluates "show" in console
+        const originalEval = window.eval;
+        window.eval = function(code) {
+            const trimmed = String(code).trim().toLowerCase();
+            if (trimmed === 'show' || trimmed === '"show"' || trimmed === "'show'") {
+                showSignupElements();
+                return;
+            }
+            return originalEval.apply(window, arguments);
+        };
+        
+        // Function to hide all sign up elements
+        function hideSignupElements() {
+            // Add hide-signup class to all sign up related elements
+            const signupButton = document.querySelector('.btn-signup');
+            const getStartedButton = document.querySelector('.hero-buttons .btn-primary');
+            const createAccountButton = document.querySelector('.cta-buttons .btn-primary');
+            const signupLink = document.querySelector('#loginModal .modal-footer p');
+            const signupModal = document.getElementById('signupModal');
+            const googleButtons = document.querySelectorAll('.btn-google');
+            const authDividers = document.querySelectorAll('.auth-divider');
+            
+            [signupButton, getStartedButton, createAccountButton, signupLink, signupModal, ...googleButtons, ...authDividers].forEach(el => {
+                if (el) {
+                    el.classList.add('hide-signup');
+                }
+            });
+        }
+        
+        // Hide sign up elements on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            hideSignupElements();
+            console.log('%c🔒 Sign up elements are hidden. Type "show" in console to reveal them.', 'color: orange; font-weight: bold;');
+        });
+        
+        // Also hide after a short delay to ensure all elements are loaded
+        setTimeout(hideSignupElements, 100);
     </script>
     <script type="module" src="firebase-init.js"></script>
     <script type="module" src="main.js"></script>
+    <!-- Background runtime bootstrap: Runs RTDB listeners, feeding schedules, RTDB→Firestore sync, and rollups on index page -->
+    <!-- This runs completely in the background - no UI required -->
+    <script type="module">
+        import { 
+            bootRuntimeCore, 
+            writeHourlyFromRTDB, 
+            startHourlySampler,
+            runRollupsForCurrentContext
+        } from './dashboard.js';
+        
+        // Boot runtime core (idempotent - safe to call multiple times)
+        // This handles: device setup, RTDB listeners, feeding schedules, rollups
+        // Feeding schedules are automatically started via setupFeedingScheduleExecutionCore()
+        bootRuntimeCore({sourcePage: 'index'});
+        
+        // Additional background tasks that run continuously
+        (async function startBackgroundRuntime() {
+            // Wait for Firebase to initialize
+            await new Promise(resolve => {
+                if (window.RUNTIME_CONTEXT) {
+                    resolve();
+                } else {
+                    // Poll for runtime context (max 10 seconds)
+                    let attempts = 0;
+                    const checkInterval = setInterval(() => {
+                        attempts++;
+                        if (window.RUNTIME_CONTEXT || attempts > 20) {
+                            clearInterval(checkInterval);
+                            resolve();
+                        }
+                    }, 500);
+                }
+            });
+            
+            // Start hourly RTDB to Firestore sync (runs every 5 minutes)
+            // This ensures sensor data from RTDB is written to Firestore hourly records
+            if (!window.__HOURLY_WRITE_TIMER__) {
+                window.__HOURLY_WRITE_TIMER__ = setInterval(async () => {
+                    try {
+                        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+                        if (uid) {
+                            console.log('[BACKGROUND] Writing hourly data from RTDB to Firestore');
+                            await writeHourlyFromRTDB(uid).catch(err => {
+                                console.error('[BACKGROUND] Hourly write error:', err);
+                            });
+                        }
+                    } catch (error) {
+                        console.error('[BACKGROUND] Hourly write timer error:', error);
+                    }
+                }, 5 * 60 * 1000); // Every 5 minutes
+                
+                // Run immediately on first load (after a short delay for RTDB data to populate)
+                setTimeout(async () => {
+                    const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+                    if (uid) {
+                        await writeHourlyFromRTDB(uid).catch(err => {
+                            console.error('[BACKGROUND] Initial hourly write error:', err);
+                        });
+                    }
+                }, 10000); // Wait 10 seconds for RTDB data to populate
+                
+                console.log('[BACKGROUND] Hourly RTDB→Firestore sync started');
+            }
+            
+            // Start hourly sampler (runs every 5 minutes)
+            // This samples current hour sensor data and updates hourly records
+            if (!window.__HOURLY_SAMPLER_STARTED__) {
+                const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+                if (uid) {
+                    startHourlySampler(uid);
+                    window.__HOURLY_SAMPLER_STARTED__ = true;
+                    console.log('[BACKGROUND] Hourly sampler started');
+                } else {
+                    // Retry when runtime context is available
+                    const retryInterval = setInterval(() => {
+                        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+                        if (uid) {
+                            clearInterval(retryInterval);
+                            startHourlySampler(uid);
+                            window.__HOURLY_SAMPLER_STARTED__ = true;
+                            console.log('[BACKGROUND] Hourly sampler started (retry)');
+                        }
+                    }, 2000);
+                }
+            }
+            
+            // Run rollups periodically (every 10 minutes)
+            // Note: bootRuntimeCore also sets up rollups, but this ensures it runs even if bootRuntimeCore hasn't completed
+            if (!window.__ROLLUP_TIMER__) {
+                window.__ROLLUP_TIMER__ = setInterval(async () => {
+                    try {
+                        const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+                        if (uid) {
+                            console.log('[BACKGROUND] Running rollups');
+                            await runRollupsForCurrentContext().catch(err => {
+                                console.error('[BACKGROUND] Rollup error:', err);
+                            });
+                        }
+                    } catch (error) {
+                        console.error('[BACKGROUND] Rollup timer error:', error);
+                    }
+                }, 10 * 60 * 1000); // Every 10 minutes
+                
+                // Run immediately on first load
+                setTimeout(async () => {
+                    const uid = window.RUNTIME_CONTEXT?.runtimeUid || null;
+                    if (uid) {
+                        await runRollupsForCurrentContext().catch(err => {
+                            console.error('[BACKGROUND] Initial rollup error:', err);
+                        });
+                    }
+                }, 15000); // Wait 15 seconds for data to be available
+                
+                console.log('[BACKGROUND] Rollup timer started');
+            }
+            
+            console.log('[BACKGROUND] Index page background runtime fully initialized');
+            console.log('[BACKGROUND] Feeding schedules are running via bootRuntimeCore → setupFeedingScheduleExecutionCore()');
+        })();
+    </script>
 </body>
 </html>

@@ -8,7 +8,7 @@
 // Get Firebase ID token for authentication
 async function getFirebaseIdToken() {
     try {
-        const { auth } = await import('../firebase-init.js');
+        const { auth } = await import('../../firebase-init.js');
         if (!auth || !auth.currentUser) {
             throw new Error('User not authenticated');
         }

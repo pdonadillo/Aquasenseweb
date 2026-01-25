@@ -27,14 +27,69 @@ service cloud.firestore {
       // ============================================================
       // USER SUBCOLLECTIONS (Level 1)
       // ============================================================
-      // Match any first-level subcollection under users/{uid}
+      // Runtime-critical subcollections that need background access
+      // Schedules: needed for feeding schedule execution
+      match /schedules/{scheduleId} {
+        // Allow read for authenticated owners, admins, or background runtime (unauthenticated)
+        // Write still requires authentication for security
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin();
+      }
+      
+      // FeedingLogs: needed to check if schedule already started
+      match /feedingLogs/{logId} {
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+      }
+      
+      // Sensors: needed for sensor data sync
+      match /sensors/{sensorId} {
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+      }
+      
+      // HourlyRecords: needed for report generation
+      match /hourlyRecords/{dateId} {
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        
+        // Nested: hours subcollection
+        match /hours/{hourId} {
+          allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+          allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        }
+      }
+      
+      // DailyReports: needed for rollups
+      match /dailyReports/{reportId} {
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+      }
+      
+      // WeeklyReports: needed for rollups
+      match /weeklyReports/{reportId} {
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+      }
+      
+      // MonthlyReports: needed for rollups
+      match /monthlyReports/{reportId} {
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+      }
+      
+      // ProductionRecords: needed for production monitoring
+      match /productionRecords/{recordId} {
+        allow read: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+        allow write: if isOwner(uid) || isAdminOrSuperAdmin() || (request.auth == null);
+      }
+      
+      // All other subcollections: require authentication
       match /{subcollection}/{docId} {
-        // Allow access if user owns the parent document OR if admin/superadmin
         allow read, write: if isOwner(uid) || isAdminOrSuperAdmin();
         
         // ============================================================
         // NESTED SUBCOLLECTIONS (Level 2)
-        // Example: users/{uid}/ponds/{pondId}/devices/{deviceId}
         // ============================================================
         match /{nestedSubcollection}/{nestedDocId} {
           allow read, write: if isOwner(uid) || isAdminOrSuperAdmin();
@@ -105,6 +160,29 @@ service cloud.firestore {
     }
     
     // ============================================================
+    // DEVICES COLLECTION (Device Ownership Mapping)
+    // ============================================================
+    // Part 1: Device ownership mapping - readable without auth for system runtime
+    match /devices/{deviceId} {
+      // Read: Anyone can read device ownership mapping (needed for headless runtime)
+      // This allows the system to determine device ownership even when no user is logged in
+      allow read: if true;
+      
+      // Write: Only authenticated users can create/update device mappings
+      // In practice, this should be restricted to the device owner or superadmin
+      // For Part 1, we allow authenticated users to create their own device mapping
+      allow create: if request.auth != null && 
+                       request.resource.data.ownerUid == request.auth.uid;
+      
+      // Update: Only the owner or superadmin can update
+      allow update: if request.auth != null && 
+                       (resource.data.ownerUid == request.auth.uid || isSuperAdmin());
+      
+      // Delete: Only superadmins can delete device mappings
+      allow delete: if isSuperAdmin();
+    }
+    
+    // ============================================================
     // PENDING REQUESTS COLLECTION (Future use)
     // ============================================================
     match /pendingRequests/{requestId} {
@@ -152,4 +230,5 @@ service cloud.firestore {
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin'
            );
   }
+  
 }

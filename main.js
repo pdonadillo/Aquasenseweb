@@ -5,7 +5,7 @@ console.log('[BOOT] main.js loaded');
 
 // Import all modules
 import { initializeNavigation, setupModalClickOutside, setupGlobalUI, openModal, closeModal, switchModal } from './ui.js';
-import { setupGlobalNotifications } from './notifications.js';
+import { setupGlobalNotifications, showNotification } from './notifications.js';
 import { handleLogin, handleSignup, logout, verifyRoleOrRedirect } from './auth.js';
 import { initializeUserDashboard, initializeAdminDashboard, initializeSuperAdminDashboard } from './dashboard.js';
 import { getPasswordStrength, updatePasswordStrengthIndicator, scrollToSection, setupFormValidation, setupScrollAnimations, setupInteractiveAnimations } from './utils.js';
@@ -168,17 +168,68 @@ async function initializeIndexPage() {
         }
     });
     
-    // Login form
-    const loginForm = document.querySelector('#loginModal form');
-    console.log('Login form found:', loginForm);
-    if (loginForm) {
-        loginForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            console.log('Login form submitted');
-            handleLogin();
-        });
-    } else {
-        console.error('Login form not found!');
+    // Login form - setup with multiple fallbacks
+    const setupLoginForm = () => {
+        const loginForm = document.querySelector('#loginModal form') || document.querySelector('#loginForm');
+        const submitButton = document.querySelector('#loginModal button[type="submit"]');
+        
+        console.log('[FORM SETUP] Login form found:', loginForm);
+        console.log('[FORM SETUP] Submit button found:', submitButton);
+        
+        const handleSubmit = async (e) => {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            console.log('[FORM] Login form submitted');
+            
+            // Verify form elements exist
+            const emailInput = document.getElementById('loginEmail');
+            const passwordInput = document.getElementById('loginPassword');
+            console.log('[FORM] Email input found:', !!emailInput);
+            console.log('[FORM] Password input found:', !!passwordInput);
+            
+            if (!emailInput || !passwordInput) {
+                console.error('[FORM] Form inputs not found!');
+                showNotification('Form error: Please refresh the page', 'error');
+                return false;
+            }
+            
+            try {
+                await handleLogin();
+            } catch (error) {
+                console.error('[FORM] Error in handleLogin:', error);
+            }
+            return false;
+        };
+        
+        if (loginForm) {
+            loginForm.addEventListener('submit', handleSubmit);
+            console.log('[FORM SETUP] Form submit listener attached');
+        }
+        
+        if (submitButton) {
+            submitButton.addEventListener('click', handleSubmit);
+            console.log('[FORM SETUP] Button click listener attached');
+        }
+        
+        if (!loginForm && !submitButton) {
+            console.error('[FORM SETUP] Neither form nor button found!');
+            return false;
+        }
+        
+        return true;
+    };
+    
+    // Try to setup immediately
+    if (!setupLoginForm()) {
+        // Retry after a short delay
+        console.log('[FORM SETUP] Retrying form setup in 100ms...');
+        setTimeout(() => {
+            if (!setupLoginForm()) {
+                console.error('[FORM SETUP] Form setup failed after retry!');
+            }
+        }, 100);
     }
 
     // Signup form
@@ -252,8 +303,16 @@ async function initializeIndexPage() {
 
 // User dashboard page initialization
 async function initializeUserPage() {
+    // Boot runtime core first (works without auth)
+    const { bootRuntimeCore } = await import('./dashboard.js');
+    await bootRuntimeCore({sourcePage: 'dashboard'});
+    
     const currentUser = await verifyRoleOrRedirect(['user']);
     if (!currentUser) return;
+    
+    // Attach UI bindings after dashboard init
+    const { attachSensorUIBindings } = await import('./dashboard.js');
+    attachSensorUIBindings();
     
     initializeUserDashboard();
 }

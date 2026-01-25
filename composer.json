@@ -1,21 +1,6 @@
 {
-    "name": "aquasense/php-backend",
-    "description": "PHP utility backend for AquaSense web application",
-    "type": "project",
-    "require": {
-        "php": ">=7.4",
-        "kreait/firebase-php": "^6.0",
-        "tecnickcom/tcpdf": "^6.6",
-        "phpoffice/phpword": "^1.0"
-    },
-    "autoload": {
-        "psr-4": {
-            "AquaSense\\": "src/"
-        }
-    },
-    "config": {
-        "platform": {
-            "php": "7.4"
-        }
-    }
+  "name": "aquasense/backend",
+  "description": "Backend for AquaSense web application (JavaScript/Node.js)",
+  "type": "project",
+  "note": "This project has been migrated from PHP to JavaScript/Node.js. See api/package.json for Node.js dependencies."
 }
